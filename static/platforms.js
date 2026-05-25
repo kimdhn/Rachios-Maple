@@ -5,12 +5,13 @@
 // Positive cameraOffsetY shows a lower part of the background.
 window.SCENE_VIEWPORT = {
   cameraOffsetX: 0,
-  cameraOffsetY: 40
+  cameraOffsetY: 60
 };
 
-// imageBottomCenter is the pixel where the rendered character image's
-// horizontal center and bottom edge should be placed.
-// path is the world-coordinate foot line for this platform.
+// imageBottomLeft is the direction-aware bottom edge coordinate:
+// left-facing characters use it as bottom-right, right-facing characters
+// use it as bottom-left.
+// path is the world-coordinate bottom edge foot line for this platform.
 // direction: 1 = right, -1 = left.
 // frameTicks controls how many render ticks each animation frame lasts.
 // frameOffsets nudges only the rendered sprite for a specific animation frame.
@@ -18,9 +19,9 @@ window.SCENE_VIEWPORT = {
 window.CHARACTER_PLATFORMS = [
   // 1번 -> 좌상단 건물 위
   {
-    imageBottomCenter: { x: 512, y: 506 },
-    path: [{ x: 512, y: 516 }, { x: 512, y: 516 }],
-    walkRange: { minX: 512, maxX: 512 },
+    imageBottomLeft: { x: 456, y: 520 },
+    path: [{ x: 456, y: 520 }, { x: 456, y: 520 }],
+    walkRange: { minX: 456, maxX: 456 },
     direction: 1,
     action: "A11",
     emotion: "E12",
@@ -29,14 +30,14 @@ window.CHARACTER_PLATFORMS = [
     emotionFrameMax: 1,
     frameTicks: 18,
     frameOffsets: {
-      "emotion:1": {x : 2}
+      "emotion:1": {x : 0}
     }
   },
   // 2번 -> 우상단 건물 위
   {
-    imageBottomCenter: { x: 1588, y: 551 },
-    path: [{ x: 1588, y: 551 }, { x: 1588, y: 551 }],
-    walkRange: { minX: 1588, maxX: 1588 },
+    imageBottomLeft: { x: 1637, y: 551 },
+    path: [{ x: 1637, y: 551 }, { x: 1637, y: 551 }],
+    walkRange: { minX: 1539, maxX: 1539 },
     direction: -1,
     action: "A11",
     emotion: "E09",
@@ -46,9 +47,9 @@ window.CHARACTER_PLATFORMS = [
   },
   // 3번 -> 사자상
   {
-    imageBottomCenter: { x: 1250, y: 1090 },
-    path: [{ x: 1250, y: 1090 }, { x: 1250, y: 1090 }],
-    walkRange: { minX: 1250, maxX: 1250 },
+    imageBottomLeft: { x: 1299, y: 1090 },
+    path: [{ x: 1299, y: 1090 }, { x: 1299, y: 1090 }],
+    walkRange: { minX: 1201, maxX: 1201 },
     direction: -1,
     action: "A07",
     emotion: "E17",
@@ -59,24 +60,21 @@ window.CHARACTER_PLATFORMS = [
   },
   // 4번 -> 좌측 계단
   {
-    imageBottomCenter: { x: 255, y: 1408 },
-    path: [{ x: 255, y: 1408 }, { x: 255, y: 1408 }],
-    walkRange: { minX: 255, maxX: 255 },
+    imageBottomLeft: { x: 308, y: 1408 },
+    path: [{ x: 308, y: 1408 }, { x: 308, y: 1408 }],
+    walkRange: { minX: 202, maxX: 202 },
     direction: -1,
     action: "A07",
     emotion: "E08",
     move: true,
     emotionFrameMax: 1,
-    frameTicks: 18,
-    frameOffsets: {
-      "emotion:1": { x: -1 }
-    }
+    frameTicks: 30,
   },
   // 5번 -> 좌측 풀숲, 주황버섯 아래
   {
-    imageBottomCenter: { x: 723, y: 1384 },
-    path: [{ x: 723, y: 1384 }, { x: 723, y: 1384 }],
-    walkRange: { minX: 723, maxX: 723 },
+    imageBottomLeft: { x: 772, y: 1384 },
+    path: [{ x: 772, y: 1384 }, { x: 772, y: 1384 }],
+    walkRange: { minX: 674, maxX: 674 },
     direction: -1,
     action: "A07",
     emotion: "E13",
@@ -86,25 +84,25 @@ window.CHARACTER_PLATFORMS = [
   },
   // 6번 -> 사자상 왼쪽
   {
-    imageBottomCenter: { x: 905, y: 1385 },
-    path: [{ x: 905, y: 1385 }, { x: 905, y: 1385 }],
+    imageBottomLeft: { x: 820, y: 1385 },
+    path: [{ x: 820, y: 1385 }, { x: 820, y: 1385 }],
     walkRange: { minX: 905, maxX: 905 },
     direction: 1,
     action: "A00",
     emotion: "E22",
     move: true,
     actionFrameMax: 2,
-    frameTicks: 30,
+    frameTicks: 50,
     frameOffsets: {
-      "action:1": { x : 1, y: -2 },
-      "action:2": { x : 1, y: -2 }
+      "action:1": { x: 2, y: -2 },
+      "action:2": { x: 2, y: -2 }
     }
   },
   // 7번 -> 사자상 아래
   {
-    imageBottomCenter: { x: 1201, y: 1435 },
-    path: [{ x: 1201, y: 1435 }, { x: 1201, y: 1435 }],
-    walkRange: { minX: 1201, maxX: 1201 },
+    imageBottomLeft: { x: 1290, y: 1435 },
+    path: [{ x: 1290, y: 1435 }, { x: 1290, y: 1435 }],
+    walkRange: { minX: 1138, maxX: 1138 },
     direction: -1,
     action: "A04",
     emotion: "E09",
@@ -112,24 +110,21 @@ window.CHARACTER_PLATFORMS = [
   },
   // 8번 -> 사자상 오른쪽
   {
-    imageBottomCenter: { x: 1553, y: 1356 },
-    path: [{ x: 1553, y: 1356 }, { x: 1553, y: 1356 }],
-    walkRange: { minX: 1553, maxX: 1553 },
+    imageBottomLeft: { x: 1495, y: 1356 },
+    path: [{ x: 1495, y: 1356 }, { x: 1495, y: 1356 }],
+    walkRange: { minX: 1495, maxX: 1495 },
     direction: 1,
     action: "A07",
     emotion: "E15",
     move: true,
     emotionFrameMax: 1,
-    frameTicks: 18,
-    frameOffsets: {
-      "emotion:1": { x: 5 }
-    }
+    frameTicks: 25
   },
   // 9번 -> 오른쪽 나무 옆
   {
-    imageBottomCenter: { x: 2277, y: 1258 },
-    path: [{ x: 2277, y: 1258 }, { x: 2277, y: 1258 }],
-    walkRange: { minX: 2277, maxX: 2277 },
+    imageBottomLeft: { x: 2228, y: 1258 },
+    path: [{ x: 2228, y: 1258 }, { x: 2228, y: 1258 }],
+    walkRange: { minX: 2228, maxX: 2228 },
     direction: -1,
     action: "A05",
     emotion: "E04",

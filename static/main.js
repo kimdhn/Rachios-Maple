@@ -316,13 +316,18 @@ function getPlatformPath(platform) {
       .sort((a, b) => a.x - b.x);
   }
 
-  const y = platform.imageBottomCenter.y;
-  const minX = platform.walkRange?.minX ?? platform.imageBottomCenter.x;
-  const maxX = platform.walkRange?.maxX ?? platform.imageBottomCenter.x;
+  const anchor = getPlatformAnchorPoint(platform);
+  const y = anchor.y;
+  const minX = platform.walkRange?.minX ?? anchor.x;
+  const maxX = platform.walkRange?.maxX ?? anchor.x;
   return [
     { x: minX, y },
     { x: maxX, y }
   ].sort((a, b) => a.x - b.x);
+}
+
+function getPlatformAnchorPoint(platform) {
+  return platform.imageBottomLeft || platform.imageBottomCenter || { x: 0, y: 0 };
 }
 
 function getPlatformXRange(platform) {
@@ -337,7 +342,7 @@ function getPlatformXRange(platform) {
 function getPlatformY(platform, x) {
   const path = getPlatformPath(platform);
   if (path.length === 0) {
-    return platform.imageBottomCenter.y;
+    return getPlatformAnchorPoint(platform).y;
   }
   if (path.length === 1) {
     return path[0].y;
@@ -491,12 +496,15 @@ function resetCharacterState(ch, platform) {
   const { minX, maxX } = getPlatformXRange(platform);
   ch.platformConfig = platform;
   ch.hidden = false;
-  ch.spriteBottomCenterX = walk.enabled
+  const anchor = getPlatformAnchorPoint(platform);
+  ch.spriteBottomLeftX = walk.enabled
     ? getRandomPointInWalkRange(platform)
-    : clamp(platform.imageBottomCenter.x, minX, maxX);
-  ch.spriteBottomCenterY = getPlatformY(platform, ch.spriteBottomCenterX);
-  ch.walkTargetX = ch.spriteBottomCenterX;
+    : clamp(anchor.x, minX, maxX);
+  ch.spriteBottomLeftY = getPlatformY(platform, ch.spriteBottomLeftX);
+  ch.walkTargetX = ch.spriteBottomLeftX;
   ch.direction = platform.direction ?? (Math.random() < 0.5 ? -1 : 1);
+  ch.nameplateCenterX = null;
+  ch.nameplateBottomY = null;
   ch.moveState = "idle";
   ch.speed = 0;
   ch.stateUntil = performance.now() + randomBetween(walk.idleMinMs || 1200, walk.idleMaxMs || 2400);
@@ -553,8 +561,8 @@ function setIdleState(ch, now) {
   const walk = ch.platformConfig.walk || {};
   ch.moveState = "idle";
   ch.speed = 0;
-  ch.spriteBottomCenterY = getPlatformY(ch.platformConfig, ch.spriteBottomCenterX);
-  ch.walkTargetX = ch.spriteBottomCenterX;
+  ch.spriteBottomLeftY = getPlatformY(ch.platformConfig, ch.spriteBottomLeftX);
+  ch.walkTargetX = ch.spriteBottomLeftX;
   ch.stateUntil = now + randomBetween(walk.idleMinMs || 1200, walk.idleMaxMs || 2400);
   ch.frameIndex = 0;
   ch.frameTick = 0;
@@ -570,12 +578,12 @@ function setWalkState(ch, now) {
   ch.speed = randomBetween(walk.speedMin || 24, walk.speedMax || 44);
   const { minX, maxX } = getPlatformXRange(ch.platformConfig);
   ch.walkTargetX = getRandomPointInWalkRange(ch.platformConfig);
-  if (Math.abs(ch.walkTargetX - ch.spriteBottomCenterX) < 4) {
-    ch.walkTargetX = ch.spriteBottomCenterX < (minX + maxX) / 2
+  if (Math.abs(ch.walkTargetX - ch.spriteBottomLeftX) < 4) {
+    ch.walkTargetX = ch.spriteBottomLeftX < (minX + maxX) / 2
       ? maxX
       : minX;
   }
-  ch.direction = ch.walkTargetX >= ch.spriteBottomCenterX ? 1 : -1;
+  ch.direction = ch.walkTargetX >= ch.spriteBottomLeftX ? 1 : -1;
   ch.stateUntil = Number.POSITIVE_INFINITY;
   ch.frameIndex = 0;
   ch.frameTick = 0;
@@ -595,20 +603,20 @@ function updateMovement(ch, deltaMs, now) {
   }
 
   const { minX, maxX } = getPlatformXRange(ch.platformConfig);
-  const targetX = clamp(ch.walkTargetX ?? ch.spriteBottomCenterX, minX, maxX);
-  const distanceToTarget = targetX - ch.spriteBottomCenterX;
+  const targetX = clamp(ch.walkTargetX ?? ch.spriteBottomLeftX, minX, maxX);
+  const distanceToTarget = targetX - ch.spriteBottomLeftX;
   ch.direction = distanceToTarget >= 0 ? 1 : -1;
 
   const stepX = ch.direction * ch.speed * (deltaMs / 1000);
   if (Math.abs(stepX) >= Math.abs(distanceToTarget)) {
-    ch.spriteBottomCenterX = targetX;
-    ch.spriteBottomCenterY = getPlatformY(ch.platformConfig, ch.spriteBottomCenterX);
+    ch.spriteBottomLeftX = targetX;
+    ch.spriteBottomLeftY = getPlatformY(ch.platformConfig, ch.spriteBottomLeftX);
     setIdleState(ch, now);
     return;
   }
 
-  ch.spriteBottomCenterX = clamp(ch.spriteBottomCenterX + stepX, minX, maxX);
-  ch.spriteBottomCenterY = getPlatformY(ch.platformConfig, ch.spriteBottomCenterX);
+  ch.spriteBottomLeftX = clamp(ch.spriteBottomLeftX + stepX, minX, maxX);
+  ch.spriteBottomLeftY = getPlatformY(ch.platformConfig, ch.spriteBottomLeftX);
 }
 
 function updateCharacters(now, deltaMs) {
@@ -680,8 +688,12 @@ function drawCharacterInWorld(ch, targetCtx) {
   const naturalH = trim ? trim.sh : (img?.naturalHeight || DEFAULT_CHAR_H);
   const drawWidth = Math.max(1, Math.round(naturalW * CHARACTER_UPSCALE_FACTOR));
   const drawHeight = Math.max(1, Math.round(naturalH * CHARACTER_UPSCALE_FACTOR));
-  const drawX = Math.round(ch.spriteBottomCenterX - drawWidth / 2 + frameOffset.x);
-  const drawY = Math.round(ch.spriteBottomCenterY - drawHeight + frameOffset.y);
+  const drawX = Math.round(
+    (ch.direction < 0
+      ? ch.spriteBottomLeftX - drawWidth
+      : ch.spriteBottomLeftX) + frameOffset.x
+  );
+  const drawY = Math.round(ch.spriteBottomLeftY - drawHeight + frameOffset.y);
 
   if (img && img.complete && img.naturalWidth > 0 && trim) {
     targetCtx.imageSmoothingEnabled = false;
@@ -722,7 +734,18 @@ function drawCharacterInWorld(ch, targetCtx) {
     targetCtx.strokeRect(drawX, drawY, drawWidth, drawHeight);
   }
 
-  drawNameplate(targetCtx, ch.name, ch.spriteBottomCenterX, ch.spriteBottomCenterY, WORLD_W);
+  if (ch.nameplateCenterX === null && img && img.complete && img.naturalWidth > 0 && trim) {
+    ch.nameplateCenterX = drawX + drawWidth / 2;
+    ch.nameplateBottomY = ch.spriteBottomLeftY;
+  }
+
+  drawNameplate(
+    targetCtx,
+    ch.name,
+    ch.nameplateCenterX ?? (drawX + drawWidth / 2),
+    ch.nameplateBottomY ?? ch.spriteBottomLeftY,
+    WORLD_W
+  );
 }
 
 function render(timestamp = performance.now()) {

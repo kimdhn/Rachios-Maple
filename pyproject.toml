@@ -1,0 +1,11 @@
+
+[project]
+name = "maple-lobby"
+version = "0.2.0"
+description = "Local Maple QR lobby"
+requires-python = ">=3.10"
+dependencies = [
+    "flask",
+    "requests",
+    "python-dotenv",
+]

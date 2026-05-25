@@ -1,0 +1,48 @@
+
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Maple Lobby</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="topbar">
+    <div class="controls">
+      <input id="nameInput" type="text" placeholder="메이플 캐릭터 닉네임을 입력하세요" />
+      <div class="row">
+        <button id="addNameBtn">닉네임 추가</button>
+        <button id="deleteNameBtn" class="danger">삭제</button>
+        <button id="toggleScannerBtn">카메라 스캔</button>
+        <button id="reloadBtn">새로고침</button>
+      </div>
+    </div>
+    <div class="ranks">
+      <button onclick="showRank('level')">레벨 순위</button>
+      <button onclick="showRank('power')">전투력 순위</button>
+      <button onclick="showRank('popularity')">인기 순위</button>
+      <button onclick="showRank('created')">생성일 순위</button>
+    </div>
+  </div>
+
+  <div id="scannerWrap" class="hidden">
+    <div class="scanner-header">
+      <strong>QR 스캔</strong>
+      <button id="cancelScannerBtn" type="button">취소</button>
+    </div>
+    <video id="readerVideo" playsinline muted></video>
+  </div>
+
+  <canvas id="scene" width="1280" height="720"></canvas>
+  <div id="panel" class="panel hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qr-scanner/qr-scanner.umd.min.js" defer></script>
+  <script src="/static/platforms.js" defer></script>
+  <script src="/static/main.js" defer></script>
+</body>
+</html>

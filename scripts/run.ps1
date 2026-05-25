@@ -25,7 +25,7 @@ function Get-EnvValue {
         return ""
     }
 
-    $line = Get-Content ".env" | Where-Object { $_ -like "$Key=*" } | Select-Object -Last 1
+    $line = Get-Content ".env" -Encoding UTF8 | Where-Object { $_ -like "$Key=*" } | Select-Object -Last 1
     if (-not $line) {
         return ""
     }
@@ -42,7 +42,7 @@ function Set-EnvValue {
     $prefix = "$Key="
     $lines = @()
     if (Test-Path ".env") {
-        $lines = @(Get-Content ".env")
+        $lines = @(Get-Content ".env" -Encoding UTF8)
     }
 
     $updated = $false
@@ -59,50 +59,50 @@ function Set-EnvValue {
         $nextLines += "$prefix$Value"
     }
 
-    Set-Content -Path ".env" -Value $nextLines
+    Set-Content -Path ".env" -Value $nextLines -Encoding UTF8
 }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host "uv가 없습니다. uv를 설치합니다..."
+    Write-Host "uv was not found. Installing uv..."
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
     Refresh-UvPath
 }
 
 if (-not (Test-Path ".env")) {
-    Write-Host ".env가 없어 .env.example을 복사합니다."
+    Write-Host ".env was not found. Copying .env.example to .env..."
     Copy-Item ".env.example" ".env"
 }
 
 $apiKey = Get-EnvValue "NEXON_OPEN_API_KEY"
-if ([string]::IsNullOrWhiteSpace($apiKey) -or $apiKey -eq "여기에_내_API_키") {
+if ([string]::IsNullOrWhiteSpace($apiKey) -or $apiKey -eq "YOUR_NEXON_OPEN_API_KEY") {
     Write-Host ""
-    Write-Host "NEXON_OPEN_API_KEY가 비어 있습니다."
-    $apiKey = Read-Host "넥슨 Open API 키를 입력하세요"
+    Write-Host "NEXON_OPEN_API_KEY is empty."
+    $apiKey = Read-Host "Enter your Nexon Open API key"
     Write-Host ""
 
     if ([string]::IsNullOrWhiteSpace($apiKey)) {
-        Write-Host "API 키가 입력되지 않아 서버 실행을 중단합니다."
+        Write-Host "API key was not entered. Aborting."
         exit 1
     }
 
     Set-EnvValue "NEXON_OPEN_API_KEY" $apiKey
-    Write-Host ".env에 API 키를 저장했습니다."
+    Write-Host "Saved API key to .env."
 }
 
 $adminPassword = Get-EnvValue "DB_ADMIN_PASSWORD"
-if ([string]::IsNullOrWhiteSpace($adminPassword) -or $adminPassword -eq "여기에_관리_비밀번호") {
+if ([string]::IsNullOrWhiteSpace($adminPassword) -or $adminPassword -eq "YOUR_DB_ADMIN_PASSWORD") {
     Write-Host ""
-    Write-Host "DB_ADMIN_PASSWORD가 비어 있습니다."
-    $adminPassword = Read-Host "DB 정리 버튼에 사용할 관리 비밀번호를 입력하세요"
+    Write-Host "DB_ADMIN_PASSWORD is empty."
+    $adminPassword = Read-Host "Enter the admin password for DB cleanup buttons"
     Write-Host ""
 
     if ([string]::IsNullOrWhiteSpace($adminPassword)) {
-        Write-Host "관리 비밀번호가 입력되지 않아 서버 실행을 중단합니다."
+        Write-Host "Admin password was not entered. Aborting."
         exit 1
     }
 
     Set-EnvValue "DB_ADMIN_PASSWORD" $adminPassword
-    Write-Host ".env에 관리 비밀번호를 저장했습니다."
+    Write-Host "Saved admin password to .env."
 }
 
 $appHost = Get-EnvValue "APP_HOST"
@@ -118,5 +118,5 @@ if ($displayHost -eq "0.0.0.0" -or $displayHost -eq "::") {
     $displayHost = "127.0.0.1"
 }
 
-Write-Host "서버를 실행합니다: http://${displayHost}:${appPort}"
+Write-Host "Starting server: http://${displayHost}:${appPort}"
 uv run python app.py

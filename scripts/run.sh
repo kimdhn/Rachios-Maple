@@ -39,7 +39,7 @@ if [ ! -f ".env" ]; then
 fi
 
 api_key=$(get_env_value "NEXON_OPEN_API_KEY" || true)
-if [ -z "$api_key" ] || [ "$api_key" = "여기에_내_API_키" ]; then
+if [ -z "$api_key" ] || [ "$api_key" = "YOUR_NEXON_OPEN_API_KEY" ]; then
   echo ""
   echo "NEXON_OPEN_API_KEY가 비어 있습니다."
   printf "넥슨 Open API 키를 입력하세요: "
@@ -56,7 +56,7 @@ if [ -z "$api_key" ] || [ "$api_key" = "여기에_내_API_키" ]; then
 fi
 
 admin_password=$(get_env_value "DB_ADMIN_PASSWORD" || true)
-if [ -z "$admin_password" ] || [ "$admin_password" = "여기에_관리_비밀번호" ]; then
+if [ -z "$admin_password" ] || [ "$admin_password" = "YOUR_DB_ADMIN_PASSWORD" ]; then
   echo ""
   echo "DB_ADMIN_PASSWORD가 비어 있습니다."
   printf "DB 정리 버튼에 사용할 관리 비밀번호를 입력하세요: "

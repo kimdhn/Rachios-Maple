@@ -5,8 +5,6 @@
 
 ## How to Run?
 
-### macOS
-
 1. `uv`가 없다면 설치해주세요.
 
 - Windows

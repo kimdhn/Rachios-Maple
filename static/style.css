@@ -45,6 +45,18 @@ body {
   border-color: #508ac9;
   box-shadow: 0 0 0 3px rgba(80, 138, 201, 0.18);
 }
+#passwordInput {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #c9d3df;
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+}
+#passwordInput:focus {
+  border-color: #508ac9;
+  box-shadow: 0 0 0 3px rgba(80, 138, 201, 0.18);
+}
 .row, .ranks {
   display: flex;
   gap: 8px;
@@ -77,6 +89,42 @@ button.danger:hover {
   border-color: #d87a7a;
 }
 .hidden { display: none; }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.42);
+}
+.modal-backdrop.hidden {
+  display: none;
+}
+.modal {
+  width: min(340px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.26);
+}
+.modal strong {
+  font-size: 16px;
+}
+.modal p {
+  margin: 0;
+  color: #526170;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 #scannerWrap {
   position: fixed;
   left: 16px;

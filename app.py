@@ -370,6 +370,12 @@ def add_name():
 
 @app.route("/api/character/<path:name>", methods=["DELETE"])
 def delete_char(name):
+    d = request.get_json(silent=True) or {}
+    ok, error = verify_admin_password(d)
+    if not ok:
+        message, status = error
+        return jsonify({"ok": False, "error": message}), status
+
     name = unquote(name).strip()
     if not name:
         return jsonify({"ok": False, "error": "캐릭터 닉네임을 입력해주세요"}), 400

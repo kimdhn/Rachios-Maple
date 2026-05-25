@@ -14,6 +14,12 @@ const readerVideo = document.getElementById("readerVideo");
 const panel = document.getElementById("panel");
 const toast = document.getElementById("toast");
 const scannerWrap = document.getElementById("scannerWrap");
+const passwordModal = document.getElementById("passwordModal");
+const passwordForm = document.getElementById("passwordForm");
+const passwordTitle = document.getElementById("passwordTitle");
+const passwordMessage = document.getElementById("passwordMessage");
+const passwordInput = document.getElementById("passwordInput");
+const passwordCancelBtn = document.getElementById("passwordCancelBtn");
 
 const bg = new Image();
 bg.src = `/static/background.png?v=${Date.now()}`;
@@ -65,6 +71,7 @@ let sceneWidth = 1;
 let sceneHeight = 1;
 let canvasDpr = 1;
 let currentRankKind = null;
+let pendingPasswordResolve = null;
 
 function resizeSourceScene() {
   if (sourceSceneCanvas.width !== WORLD_W || sourceSceneCanvas.height !== WORLD_H) {
@@ -790,9 +797,33 @@ async function addCharacterByName(name) {
   await loadChars();
 }
 
-async function deleteCharacterByName(name) {
+function closePasswordModal(value = null) {
+  passwordModal.classList.add("hidden");
+  passwordForm.reset();
+  if (pendingPasswordResolve) {
+    pendingPasswordResolve(value);
+    pendingPasswordResolve = null;
+  }
+}
+
+function requestAdminPassword(message) {
+  if (pendingPasswordResolve) {
+    closePasswordModal(null);
+  }
+  passwordTitle.textContent = "관리 비밀번호";
+  passwordMessage.textContent = message;
+  passwordModal.classList.remove("hidden");
+  passwordInput.focus();
+  return new Promise((resolve) => {
+    pendingPasswordResolve = resolve;
+  });
+}
+
+async function deleteCharacterByName(name, password) {
   const res = await fetch(`/api/character/${encodeURIComponent(name)}`, {
-    method: "DELETE"
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
   });
   const data = await res.json();
   if (!res.ok) {
@@ -831,7 +862,7 @@ async function requestAdminCleanup(kind) {
     queue: "대기열을 비웁니다",
     db: "DB의 모든 캐릭터 정보를 삭제합니다"
   };
-  const password = window.prompt(`${labelMap[kind]}.\n관리 비밀번호를 입력하세요.`);
+  const password = await requestAdminPassword(labelMap[kind]);
   if (password === null) {
     return;
   }
@@ -988,12 +1019,39 @@ deleteNameBtn.onclick = async () => {
     return;
   }
   try {
-    await deleteCharacterByName(name);
+    const password = await requestAdminPassword(`${name} 캐릭터를 삭제합니다`);
+    if (password === null) {
+      return;
+    }
+    if (!password.trim()) {
+      showToast("관리 비밀번호를 입력해주세요");
+      return;
+    }
+    await deleteCharacterByName(name, password);
     showToast("캐릭터 삭제 완료");
   } catch (e) {
     showToast(e.message);
   }
 };
+
+passwordForm.onsubmit = (event) => {
+  event.preventDefault();
+  closePasswordModal(passwordInput.value);
+};
+
+passwordCancelBtn.onclick = () => closePasswordModal(null);
+
+passwordModal.addEventListener("click", (event) => {
+  if (event.target === passwordModal) {
+    closePasswordModal(null);
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !passwordModal.classList.contains("hidden")) {
+    closePasswordModal(null);
+  }
+});
 
 nameInput.addEventListener("keydown", async (event) => {
   if (event.key !== "Enter") {

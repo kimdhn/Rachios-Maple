@@ -5,7 +5,7 @@
 // Positive cameraOffsetY shows a lower part of the background.
 window.SCENE_VIEWPORT = {
   cameraOffsetX: 0,
-  cameraOffsetY: 80
+  cameraOffsetY: 40
 };
 
 // imageBottomCenter is the pixel where the rendered character image's

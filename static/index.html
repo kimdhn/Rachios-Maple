@@ -41,6 +41,17 @@
 
   <canvas id="scene" width="1280" height="720"></canvas>
   <div id="panel" class="panel hidden"></div>
+  <div id="passwordModal" class="modal-backdrop hidden">
+    <form id="passwordForm" class="modal" autocomplete="off">
+      <strong id="passwordTitle">관리 비밀번호</strong>
+      <p id="passwordMessage"></p>
+      <input id="passwordInput" type="password" placeholder="관리 비밀번호" autocomplete="current-password" />
+      <div class="modal-actions">
+        <button id="passwordCancelBtn" type="button">취소</button>
+        <button id="passwordSubmitBtn" type="submit" class="danger">확인</button>
+      </div>
+    </form>
+  </div>
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/qr-scanner/qr-scanner.umd.min.js" defer></script>

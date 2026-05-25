@@ -100,10 +100,10 @@ button.danger:hover {
 .panel {
   position: fixed;
   right: 16px;
-  top: 224px;
+  top: 284px;
   z-index: 30;
   width: min(380px, calc(100vw - 32px));
-  max-height: min(520px, calc(100vh - 244px));
+  max-height: min(520px, max(160px, calc(100vh - 304px)));
   overflow: auto;
 }
 .panel-header {
@@ -207,7 +207,8 @@ button.danger:hover {
   .panel {
     left: 12px;
     right: 12px;
-    top: 232px;
+    top: 332px;
     width: auto;
+    max-height: max(160px, calc(100vh - 344px));
   }
 }

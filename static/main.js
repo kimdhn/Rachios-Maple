@@ -7,6 +7,8 @@ const addNameBtn = document.getElementById("addNameBtn");
 const deleteNameBtn = document.getElementById("deleteNameBtn");
 const toggleScannerBtn = document.getElementById("toggleScannerBtn");
 const reloadBtn = document.getElementById("reloadBtn");
+const cleanQueueBtn = document.getElementById("cleanQueueBtn");
+const cleanDbBtn = document.getElementById("cleanDbBtn");
 const cancelScannerBtn = document.getElementById("cancelScannerBtn");
 const readerVideo = document.getElementById("readerVideo");
 const panel = document.getElementById("panel");
@@ -25,7 +27,7 @@ const NAMEPLATE_FONT_SIZE = 24;
 const NAMEPLATE_H_PADDING = 20;
 const NAMEPLATE_V_PADDING = 16;
 const NAMEPLATE_GAP = 4;
-const MOTION_FRAME_TICKS = 18;
+const DEFAULT_MOTION_FRAME_TICKS = 18;
 const SCANNER_BOX_SIZE = 320;
 const SCANNER_DOWNSCALED_SIZE = 500;
 const FIXED_WMOTION = "W04";
@@ -381,12 +383,13 @@ function getPlatformFrames(platform, stateName) {
   return platform.idleFrames?.length ? platform.idleFrames : DEFAULT_IDLE_FRAMES;
 }
 
-function getCurrentFrame(ch) {
+function getCurrentFrameInfo(ch) {
   if (!ch.frames || !ch.platformConfig) {
     return null;
   }
   const frames = getPlatformFrames(ch.platformConfig, ch.moveState);
-  const frame = frames[(ch.frameIndex || 0) % frames.length];
+  const frameIndex = (ch.frameIndex || 0) % frames.length;
+  const frame = frames[frameIndex];
   const key = serializeFrameParams(
     {
       ...DEFAULT_RENDER_QUERY,
@@ -395,7 +398,68 @@ function getCurrentFrame(ch) {
     },
     frame
   );
-  return ch.frames[key] || null;
+  return {
+    img: ch.frames[key] || null,
+    frame,
+    frameIndex
+  };
+}
+
+function getPlatformFrameTicks(platform) {
+  const ticks = Number(platform.frameTicks ?? platform.motionFrameTicks);
+  if (!Number.isFinite(ticks) || ticks <= 0) {
+    return DEFAULT_MOTION_FRAME_TICKS;
+  }
+  return Math.max(1, Math.round(ticks));
+}
+
+function getFrameOffsetByKey(offsets, key) {
+  const offset = offsets?.[key];
+  if (!offset) {
+    return { x: 0, y: 0 };
+  }
+  return {
+    x: Number(offset.x) || 0,
+    y: Number(offset.y) || 0
+  };
+}
+
+function getFrameRenderOffset(platform, frameInfo) {
+  const base = {
+    x: Number(platform.renderOffset?.x) || 0,
+    y: Number(platform.renderOffset?.y) || 0
+  };
+  const offsets = platform.frameOffsets;
+  if (!offsets || !frameInfo?.frame) {
+    return base;
+  }
+
+  const frame = frameInfo.frame;
+  const frameIndex = frameInfo.frameIndex;
+  let offset = { x: 0, y: 0 };
+
+  if (Array.isArray(offsets)) {
+    offset = offsets[frameIndex] || offset;
+  } else {
+    const actionKey = frame.actionFrame === null || frame.actionFrame === undefined
+      ? null
+      : `action:${frame.actionFrame}`;
+    const emotionKey = frame.emotionFrame === null || frame.emotionFrame === undefined
+      ? null
+      : `emotion:${frame.emotionFrame}`;
+    offset =
+      offsets[`index:${frameIndex}`] ||
+      offsets[frameIndex] ||
+      (actionKey ? offsets[actionKey] : null) ||
+      (emotionKey ? offsets[emotionKey] : null) ||
+      offsets.default ||
+      offset;
+  }
+
+  return {
+    x: base.x + (Number(offset.x) || 0),
+    y: base.y + (Number(offset.y) || 0)
+  };
 }
 
 function getCharacterSize(img) {
@@ -469,7 +533,7 @@ function updateFrameAnimation(ch) {
   }
 
   ch.frameTick = (ch.frameTick || 0) + 1;
-  if (ch.frameTick >= MOTION_FRAME_TICKS) {
+  if (ch.frameTick >= getPlatformFrameTicks(ch.platformConfig)) {
     ch.frameTick = 0;
     ch.frameIndex = ((ch.frameIndex || 0) + 1) % frames.length;
   }
@@ -597,15 +661,17 @@ function drawCharacterInWorld(ch, targetCtx) {
     return;
   }
 
-  const img = getCurrentFrame(ch);
+  const frameInfo = getCurrentFrameInfo(ch);
+  const img = frameInfo?.img || null;
   const trim = getTrimmedSprite(img);
+  const frameOffset = getFrameRenderOffset(ch.platformConfig, frameInfo);
 
   const naturalW = trim ? trim.sw : (img?.naturalWidth || DEFAULT_CHAR_W);
   const naturalH = trim ? trim.sh : (img?.naturalHeight || DEFAULT_CHAR_H);
   const drawWidth = Math.max(1, Math.round(naturalW * CHARACTER_UPSCALE_FACTOR));
   const drawHeight = Math.max(1, Math.round(naturalH * CHARACTER_UPSCALE_FACTOR));
-  const drawX = Math.round(ch.spriteBottomCenterX - drawWidth / 2);
-  const drawY = Math.round(ch.spriteBottomCenterY - drawHeight);
+  const drawX = Math.round(ch.spriteBottomCenterX - drawWidth / 2 + frameOffset.x);
+  const drawY = Math.round(ch.spriteBottomCenterY - drawHeight + frameOffset.y);
 
   if (img && img.complete && img.naturalWidth > 0 && trim) {
     targetCtx.imageSmoothingEnabled = false;
@@ -733,6 +799,48 @@ async function deleteCharacterByName(name) {
   await loadChars();
   if (currentRankKind) {
     await showRank(currentRankKind);
+  }
+}
+
+async function runAdminCleanup(kind, password) {
+  const endpointMap = {
+    queue: "/api/admin/clean_queue",
+    db: "/api/admin/clean_db"
+  };
+  const res = await fetch(endpointMap[kind], {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "정리 작업 실패");
+  }
+  await loadChars();
+  if (currentRankKind) {
+    await showRank(currentRankKind);
+  }
+  return data;
+}
+
+async function requestAdminCleanup(kind) {
+  const labelMap = {
+    queue: "대기열을 비웁니다",
+    db: "DB의 모든 캐릭터 정보를 삭제합니다"
+  };
+  const password = window.prompt(`${labelMap[kind]}.\n관리 비밀번호를 입력하세요.`);
+  if (password === null) {
+    return;
+  }
+  if (!password.trim()) {
+    showToast("관리 비밀번호를 입력해주세요");
+    return;
+  }
+  try {
+    await runAdminCleanup(kind, password);
+    showToast(kind === "queue" ? "대기열을 비웠습니다" : "DB를 비웠습니다");
+  } catch (e) {
+    showToast(e.message);
   }
 }
 
@@ -896,6 +1004,9 @@ reloadBtn.onclick = async () => {
   await loadChars();
   showToast("새로고침 완료");
 };
+
+cleanQueueBtn.onclick = () => requestAdminCleanup("queue");
+cleanDbBtn.onclick = () => requestAdminCleanup("db");
 
 async function startScanner() {
   if (!window.QrScanner) {

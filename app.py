@@ -1,6 +1,6 @@
 
 from flask import Flask, request, jsonify, send_from_directory, Response
-import logging, sqlite3, os, requests
+import hmac, logging, sqlite3, os, requests
 import flask.cli
 from urllib.parse import unquote, urlparse
 
@@ -27,6 +27,7 @@ MAX = int(os.getenv("MAX_CHARACTERS", "10"))
 QUEUE_LIMIT = int(os.getenv("QUEUE_LIMIT", str(MAX)))
 NEXON_API_BASE = "https://open.api.nexon.com/maplestory/v1"
 NEXON_API_KEY = os.getenv("NEXON_OPEN_API_KEY", "")
+DB_ADMIN_PASSWORD = os.getenv("DB_ADMIN_PASSWORD", "")
 
 def get_conn():
     con = sqlite3.connect(DB)
@@ -273,6 +274,34 @@ def build_character_from_name(name: str):
         "character_class": basic.get("character_class"),
     }
 
+def verify_admin_password(payload: dict):
+    if not DB_ADMIN_PASSWORD:
+        return False, ("DB_ADMIN_PASSWORD is not configured", 503)
+    password = str(payload.get("password", ""))
+    if not hmac.compare_digest(password, DB_ADMIN_PASSWORD):
+        return False, ("비밀번호가 올바르지 않습니다", 403)
+    return True, None
+
+def clean_queue():
+    con = get_conn()
+    cur = con.cursor()
+    cur.execute("DELETE FROM char_queue")
+    deleted = cur.rowcount
+    con.commit()
+    con.close()
+    return deleted
+
+def clean_db():
+    con = get_conn()
+    cur = con.cursor()
+    cur.execute("DELETE FROM char_queue")
+    deleted_queue = cur.rowcount
+    cur.execute("DELETE FROM chars")
+    deleted_chars = cur.rowcount
+    con.commit()
+    con.close()
+    return deleted_queue, deleted_chars
+
 init_db()
 
 @app.route("/")
@@ -357,6 +386,30 @@ def delete_char(name):
         return jsonify({"ok": False, "error": "해당 캐릭터를 찾지 못했습니다"}), 404
     return jsonify({"ok": True, "name": name})
 
+@app.route("/api/admin/clean_queue", methods=["POST"])
+def admin_clean_queue():
+    d = request.get_json(force=True)
+    ok, error = verify_admin_password(d)
+    if not ok:
+        message, status = error
+        return jsonify({"ok": False, "error": message}), status
+    deleted = clean_queue()
+    return jsonify({"ok": True, "deleted_queue": deleted})
+
+@app.route("/api/admin/clean_db", methods=["POST"])
+def admin_clean_db():
+    d = request.get_json(force=True)
+    ok, error = verify_admin_password(d)
+    if not ok:
+        message, status = error
+        return jsonify({"ok": False, "error": message}), status
+    deleted_queue, deleted_chars = clean_db()
+    return jsonify({
+        "ok": True,
+        "deleted_queue": deleted_queue,
+        "deleted_chars": deleted_chars,
+    })
+
 @app.route("/api/rank/<kind>")
 def rank(kind):
     rank_specs = {
@@ -390,6 +443,7 @@ def proxy():
     return Response(r.content, status=r.status_code, headers=headers)
 
 def run_local_server():
+    host = os.getenv("APP_HOST", "127.0.0.1")
     port = int(os.getenv("PORT", os.getenv("APP_PORT", "1939")))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     quiet = os.getenv("QUIET_SERVER", "1") != "0"
@@ -398,8 +452,11 @@ def run_local_server():
         flask.cli.show_server_banner = lambda *args, **kwargs: None
         logging.getLogger("werkzeug").disabled = True
 
-    print(f"Local server running at http://127.0.0.1:{port}")
-    app.run(host="127.0.0.1", port=port, debug=debug, use_reloader=False)
+    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    print(f"Server running at http://{display_host}:{port}")
+    if host == "0.0.0.0":
+        print(f"LAN/external access is enabled. Use this machine's LAN IP or forwarded public address with port {port}.")
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
 
 if __name__ == "__main__":
     run_local_server()

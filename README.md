@@ -5,24 +5,70 @@
 
 ## How to Run?
 
-1. `uv`가 없다면 설치해주세요.
+`scripts/` 아래의 파일을 아래와 같이 실행해주세요.
 
-- Windows
+### macOS
+
+```sh
+sh scripts/run.sh
+```
+
+### Windows
+
+파일 탐색기에서 `scripts\run.bat`을 더블클릭해서 실행해주세요. 또는, 아래의 커맨드로 실행합니다.
+
+PowerShell:
 
 ```powershell
-# 방법 1
+.\scripts\run.ps1
+```
+
+PowerShell 실행 정책 때문에 막히면 아래 명령을 사용하세요.
+
+```powershell
+powershell -ExecutionPolicy ByPass -File .\scripts\run.ps1
+```
+
+기본 주소는 `http://127.0.0.1:1939`입니다.
+
+<details>
+<summary>수동으로 환경 설정하고 실행하기</summary>
+
+### Manual Setup
+
+1. `uv`가 없다면 설치해주세요.
+
+Windows PowerShell:
+
+```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-- Mac
+macOS:
+
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-2. `.env.example`을 복사, 이름을 `.env`로 바꾸세요. 그리고, API 키를 입력하세요.
+2. `.env.example`을 복사해서 `.env`를 만들고 값을 입력하세요.
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS:
+
+```sh
+cp .env.example .env
+```
+
+`.env` 예시:
 
 ```env
 NEXON_OPEN_API_KEY=여기에_내_API_키
+DB_ADMIN_PASSWORD=여기에_관리_비밀번호
 APP_PORT=1939
 QUIET_SERVER=1
 FLASK_DEBUG=0
@@ -35,6 +81,8 @@ uv run python app.py
 ```
 
 기본 주소는 `http://127.0.0.1:1939`입니다.
+
+</details>
 
 ## Manage Database
 
@@ -65,3 +113,5 @@ sqlite3 db.sqlite3 ".read query/CLEAN_DB.sql"
 
 - `query/CLEAN_QUEUE.sql`: 화면에 올라온 캐릭터 대기열만 비웁니다. `chars` 테이블의 캐릭터 정보와 랭킹 데이터는 유지됩니다.
 - `query/CLEAN_DB.sql`: `chars`, `char_queue`를 모두 비웁니다. 캐릭터 정보와 랭킹 데이터까지 삭제됩니다.
+
+UI의 `대기열 비우기`, `DB 비우기` 버튼도 같은 작업을 수행합니다. 버튼을 누르면 관리 비밀번호를 입력해야 하며, 이 값은 `.env`의 `DB_ADMIN_PASSWORD`와 비교됩니다.

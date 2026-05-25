@@ -1,5 +1,13 @@
 // Character placement settings.
 // All coordinates are absolute positions in the original background image.
+// Scene viewport settings.
+// cameraOffsetX/cameraOffsetY move the cropped viewport in world pixels.
+// Positive cameraOffsetY shows a lower part of the background.
+window.SCENE_VIEWPORT = {
+  cameraOffsetX: 0,
+  cameraOffsetY: 80
+};
+
 // imageBottomCenter is the pixel where the rendered character image's
 // horizontal center and bottom edge should be placed.
 // path is the world-coordinate foot line for this platform.

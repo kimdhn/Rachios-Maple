@@ -20,6 +20,7 @@ bg.src = `/static/background.png?v=${Date.now()}`;
 
 const WORLD_W = 2528;
 const WORLD_H = 1684;
+const SCENE_VIEWPORT = window.SCENE_VIEWPORT || {};
 const DEFAULT_CHAR_W = 80;
 const DEFAULT_CHAR_H = 120;
 const NAMEPLATE_FONT_FAMILY = "'Press Start 2P', monospace";
@@ -280,8 +281,10 @@ function getSourceSceneViewport() {
     cropWidth = WORLD_H * viewportAspect;
   }
 
-  const cameraX = WORLD_W / 2;
-  const cameraY = WORLD_H / 2;
+  const cameraOffsetX = Number(SCENE_VIEWPORT.cameraOffsetX) || 0;
+  const cameraOffsetY = Number(SCENE_VIEWPORT.cameraOffsetY) || 0;
+  const cameraX = WORLD_W / 2 + cameraOffsetX;
+  const cameraY = WORLD_H / 2 + cameraOffsetY;
   const cropX = clamp(cameraX - cropWidth / 2, 0, WORLD_W - cropWidth);
   const cropY = clamp(cameraY - cropHeight / 2, 0, WORLD_H - cropHeight);
 

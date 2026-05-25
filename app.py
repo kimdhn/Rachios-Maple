@@ -308,6 +308,10 @@ init_db()
 def root():
     return send_from_directory("static", "index.html")
 
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory("static", "favicon.ico", mimetype="image/vnd.microsoft.icon")
+
 @app.route("/api/list")
 def list_chars():
     con = get_conn()

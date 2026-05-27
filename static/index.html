@@ -16,12 +16,15 @@
     <div class="controls">
       <input id="nameInput" type="text" placeholder="메이플 캐릭터 닉네임을 입력하세요" />
       <div class="row">
-        <button id="addNameBtn">닉네임 추가</button>
-        <button id="deleteNameBtn" class="danger">삭제</button>
+        <button id="addNameBtn">추가</button>
+        <button id="removeQueueBtn" class="danger">제거</button>
+        <button id="cleanQueueBtn" class="danger">집 보내기</button>
         <button id="toggleScannerBtn">카메라 스캔</button>
         <button id="reloadBtn">새로고침</button>
-        <button id="cleanQueueBtn" class="danger">대기열 비우기</button>
-        <button id="cleanDbBtn" class="danger">DB 비우기</button>
+      </div>
+      <div class="row db-row">
+        <button id="deleteNameBtn" class="danger">삭제</button>
+        <button id="cleanDbBtn" class="danger" hidden>DB 비우기</button>
       </div>
     </div>
     <div class="ranks">

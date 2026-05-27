@@ -16,13 +16,13 @@ body {
 }
 #topbar {
   position: fixed;
-  right: 16px;
-  top: 16px;
+  right: 12px;
+  top: 12px;
   z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: min(380px, calc(100vw - 32px));
+  gap: 8px;
+  width: min(330px, calc(100vw - 24px));
 }
 .controls, .ranks, .panel, #scannerWrap {
   background: rgba(255, 255, 255, 0.92);
@@ -30,14 +30,14 @@ body {
   border-radius: 8px;
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
   backdrop-filter: blur(12px);
-  padding: 12px;
+  padding: 9px;
 }
 #nameInput {
   width: 100%;
-  padding: 10px 11px;
+  padding: 8px 9px;
   border: 1px solid #c9d3df;
   border-radius: 8px;
-  font-size: 15px;
+  font-size: 13px;
   outline: none;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
@@ -59,16 +59,20 @@ body {
 }
 .row, .ranks {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+.db-row {
+  margin-top: 6px;
 }
 button {
   border: 1px solid #c8d2dc;
   background: linear-gradient(#ffffff, #f6f8fb);
   border-radius: 8px;
   color: #243447;
+  font-size: 13px;
   font-weight: 700;
-  padding: 8px 12px;
+  padding: 6px 9px;
   cursor: pointer;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
   transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
@@ -80,6 +84,20 @@ button:hover {
 button:active {
   transform: translateY(1px);
 }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  transform: none;
+}
+button:disabled:hover {
+  background: linear-gradient(#ffffff, #f6f8fb);
+  border-color: #c8d2dc;
+}
+button.active {
+  border-color: #4f84be;
+  background: #e8f2ff;
+  color: #174a80;
+}
 button.danger {
   border-color: #e2a3a3;
   color: #8f2424;
@@ -87,6 +105,10 @@ button.danger {
 button.danger:hover {
   background: #fff0f0;
   border-color: #d87a7a;
+}
+button.danger:disabled:hover {
+  background: linear-gradient(#ffffff, #f6f8fb);
+  border-color: #e2a3a3;
 }
 .hidden { display: none; }
 .modal-backdrop {
@@ -127,10 +149,10 @@ button.danger:hover {
 }
 #scannerWrap {
   position: fixed;
-  left: 16px;
-  top: 16px;
+  left: 12px;
+  top: 12px;
   z-index: 25;
-  width: 320px;
+  width: 280px;
 }
 .scanner-header {
   display: flex;
@@ -143,15 +165,15 @@ button.danger:hover {
   display: block;
   border-radius: 10px;
   background: #000;
-  min-height: 240px;
+  min-height: 210px;
 }
 .panel {
   position: fixed;
-  right: 16px;
-  top: 284px;
+  right: 12px;
+  top: 228px;
   z-index: 30;
-  width: min(380px, calc(100vw - 32px));
-  max-height: min(520px, max(160px, calc(100vh - 304px)));
+  width: min(330px, calc(100vw - 24px));
+  max-height: min(520px, max(160px, calc(100vh - 244px)));
   overflow: auto;
 }
 .panel-header {
@@ -159,24 +181,24 @@ button.danger:hover {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
-  padding-bottom: 8px;
+  padding-bottom: 7px;
   border-bottom: 1px solid #e5ebf0;
 }
 .panel-header strong {
-  font-size: 16px;
+  font-size: 14px;
   letter-spacing: 0;
 }
 .panel-body {
   display: grid;
-  gap: 7px;
+  gap: 6px;
 }
 .rank-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 8px 10px;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 8px;
   border: 1px solid #e6edf3;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.78);
@@ -184,11 +206,12 @@ button.danger:hover {
 .rank-num {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   border-radius: 999px;
   background: #eef3f7;
   color: #435466;
+  font-size: 12px;
   font-weight: 700;
 }
 .rank-name {
@@ -204,7 +227,7 @@ button.danger:hover {
   text-decoration: underline;
 }
 .rank-meta {
-  font-size: 13px;
+  font-size: 12px;
   color: #526170;
   font-weight: 700;
   white-space: nowrap;
@@ -255,8 +278,8 @@ button.danger:hover {
   .panel {
     left: 12px;
     right: 12px;
-    top: 332px;
+    top: 278px;
     width: auto;
-    max-height: max(160px, calc(100vh - 344px));
+    max-height: max(160px, calc(100vh - 290px));
   }
 }

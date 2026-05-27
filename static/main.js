@@ -4,6 +4,7 @@ const sourceSceneCanvas = document.createElement("canvas");
 const sourceSceneCtx = sourceSceneCanvas.getContext("2d");
 const nameInput = document.getElementById("nameInput");
 const addNameBtn = document.getElementById("addNameBtn");
+const removeQueueBtn = document.getElementById("removeQueueBtn");
 const deleteNameBtn = document.getElementById("deleteNameBtn");
 const toggleScannerBtn = document.getElementById("toggleScannerBtn");
 const reloadBtn = document.getElementById("reloadBtn");
@@ -829,16 +830,34 @@ function closePasswordModal(value = null) {
   }
 }
 
-function requestAdminPassword(message) {
+function requestModalInput({ title = "관리 비밀번호", message = "", type = "text" } = {}) {
   if (pendingPasswordResolve) {
     closePasswordModal(null);
   }
-  passwordTitle.textContent = "관리 비밀번호";
+  passwordTitle.textContent = title;
   passwordMessage.textContent = message;
+  passwordInput.type = type;
+  passwordInput.placeholder = title;
   passwordModal.classList.remove("hidden");
   passwordInput.focus();
   return new Promise((resolve) => {
     pendingPasswordResolve = resolve;
+  });
+}
+
+function requestAdminPassword(message) {
+  return requestModalInput({
+    title: "관리 비밀번호",
+    message,
+    type: "password"
+  });
+}
+
+function requestConfirmationText(message) {
+  return requestModalInput({
+    title: "초기화 확인",
+    message,
+    type: "text"
   });
 }
 
@@ -857,6 +876,18 @@ async function deleteCharacterByName(name, password) {
   if (currentRankKind) {
     await showRank(currentRankKind);
   }
+}
+
+async function removeCharacterFromQueue(name) {
+  const res = await fetch(`/api/queue/${encodeURIComponent(name)}`, {
+    method: "DELETE"
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "대기열 제거 실패");
+  }
+  nameInput.value = "";
+  await loadChars();
 }
 
 async function runAdminCleanup(kind, password) {
@@ -898,6 +929,16 @@ async function requestAdminCleanup(kind) {
     showToast(kind === "queue" ? "대기열을 비웠습니다" : "DB를 비웠습니다");
   } catch (e) {
     showToast(e.message);
+  }
+}
+
+async function loadAppConfig() {
+  try {
+    const res = await fetch("/api/config");
+    const config = await res.json();
+    cleanDbBtn.hidden = !config.admin_mode;
+  } catch (e) {
+    cleanDbBtn.hidden = true;
   }
 }
 
@@ -1035,6 +1076,20 @@ addNameBtn.onclick = async () => {
   }
 };
 
+removeQueueBtn.onclick = async () => {
+  const name = nameInput.value.trim();
+  if (!name) {
+    showToast("제거할 캐릭터 닉네임을 입력해주세요");
+    return;
+  }
+  try {
+    await removeCharacterFromQueue(name);
+    showToast("대기열에서 제거했습니다");
+  } catch (e) {
+    showToast(e.message);
+  }
+};
+
 deleteNameBtn.onclick = async () => {
   const name = nameInput.value.trim();
   if (!name) {
@@ -1089,8 +1144,36 @@ reloadBtn.onclick = async () => {
   showToast("새로고침 완료");
 };
 
-cleanQueueBtn.onclick = () => requestAdminCleanup("queue");
-cleanDbBtn.onclick = () => requestAdminCleanup("db");
+cleanQueueBtn.onclick = () => {
+  requestAdminCleanup("queue");
+};
+
+cleanDbBtn.onclick = async () => {
+  const password = await requestAdminPassword("DB의 모든 캐릭터 정보를 삭제합니다");
+  if (password === null) {
+    return;
+  }
+  if (!password.trim()) {
+    showToast("관리 비밀번호를 입력해주세요");
+    return;
+  }
+  const confirmation = await requestConfirmationText(
+    '정말 초기화하겠습니까? 이 선택은 되돌릴 수 없습니다. 정말 초기화하려면, "한메동/라치오스/초기화한다"를 입력하세요.'
+  );
+  if (confirmation === null) {
+    return;
+  }
+  if (confirmation !== "한메동/라치오스/초기화한다") {
+    showToast("초기화 문구가 일치하지 않습니다");
+    return;
+  }
+  try {
+    await runAdminCleanup("db", password);
+    showToast("DB를 비웠습니다");
+  } catch (e) {
+    showToast(e.message);
+  }
+};
 
 async function startScanner() {
   if (!window.QrScanner) {
@@ -1159,4 +1242,5 @@ bg.onload = () => {
 window.addEventListener("resize", resizeCanvas);
 
 resizeCanvas();
+loadAppConfig();
 loadChars().then(() => render());

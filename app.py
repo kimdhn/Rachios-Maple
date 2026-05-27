@@ -28,6 +28,7 @@ QUEUE_LIMIT = int(os.getenv("QUEUE_LIMIT", str(MAX)))
 NEXON_API_BASE = "https://open.api.nexon.com/maplestory/v1"
 NEXON_API_KEY = os.getenv("NEXON_OPEN_API_KEY", "")
 DB_ADMIN_PASSWORD = os.getenv("DB_ADMIN_PASSWORD", "")
+ADMIN_MODE = os.getenv("ADMIN_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 def get_conn():
     con = sqlite3.connect(DB)
@@ -328,6 +329,10 @@ def list_chars():
     con.close()
     return jsonify(rows)
 
+@app.route("/api/config")
+def app_config():
+    return jsonify({"admin_mode": ADMIN_MODE})
+
 @app.route("/api/add", methods=["POST"])
 def add_char():
     d = request.get_json(force=True)
@@ -396,6 +401,23 @@ def delete_char(name):
         return jsonify({"ok": False, "error": "해당 캐릭터를 찾지 못했습니다"}), 404
     return jsonify({"ok": True, "name": name})
 
+@app.route("/api/queue/<path:name>", methods=["DELETE"])
+def remove_from_queue(name):
+    name = unquote(name).strip()
+    if not name:
+        return jsonify({"ok": False, "error": "캐릭터 닉네임을 입력해주세요"}), 400
+
+    con = get_conn()
+    cur = con.cursor()
+    cur.execute("DELETE FROM char_queue WHERE name = ?", (name,))
+    deleted = cur.rowcount
+    con.commit()
+    con.close()
+
+    if deleted == 0:
+        return jsonify({"ok": False, "error": "대기열에서 해당 캐릭터를 찾지 못했습니다"}), 404
+    return jsonify({"ok": True, "name": name})
+
 @app.route("/api/admin/clean_queue", methods=["POST"])
 def admin_clean_queue():
     d = request.get_json(force=True)
@@ -408,6 +430,9 @@ def admin_clean_queue():
 
 @app.route("/api/admin/clean_db", methods=["POST"])
 def admin_clean_db():
+    if not ADMIN_MODE:
+        return jsonify({"ok": False, "error": "관리자모드가 비활성화되어 있습니다"}), 403
+
     d = request.get_json(force=True)
     ok, error = verify_admin_password(d)
     if not ok:

@@ -69,6 +69,7 @@ cp .env.example .env
 ```env
 NEXON_OPEN_API_KEY=여기에_내_API_키
 DB_ADMIN_PASSWORD=여기에_관리_비밀번호
+ADMIN_MODE=0
 APP_PORT=1939
 QUIET_SERVER=1
 FLASK_DEBUG=0
@@ -114,4 +115,4 @@ sqlite3 db.sqlite3 ".read query/CLEAN_DB.sql"
 - `query/CLEAN_QUEUE.sql`: 화면에 올라온 캐릭터 대기열만 비웁니다. `chars` 테이블의 캐릭터 정보와 랭킹 데이터는 유지됩니다.
 - `query/CLEAN_DB.sql`: `chars`, `char_queue`를 모두 비웁니다. 캐릭터 정보와 랭킹 데이터까지 삭제됩니다.
 
-UI의 `대기열 비우기`, `DB 비우기` 버튼도 같은 작업을 수행합니다. 버튼을 누르면 관리 비밀번호를 입력해야 하며, 이 값은 `.env`의 `DB_ADMIN_PASSWORD`와 비교됩니다.
+UI의 `집 보내기`, `DB 비우기` 버튼도 같은 작업을 수행합니다. 버튼을 누르면 관리 비밀번호를 입력해야 하며, 이 값은 `.env`의 `DB_ADMIN_PASSWORD`와 비교됩니다. `DB 비우기` 버튼은 `.env`에서 `ADMIN_MODE=1`로 실행한 경우에만 표시됩니다.

@@ -2,6 +2,7 @@
 from flask import Flask, request, jsonify, send_from_directory, Response, has_request_context
 import hmac, json, logging, sqlite3, os, requests
 import flask.cli
+from datetime import datetime
 from urllib.parse import unquote, urlparse
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -30,6 +31,7 @@ NEXON_API_KEY = os.getenv("NEXON_OPEN_API_KEY", "")
 DB_ADMIN_PASSWORD = os.getenv("DB_ADMIN_PASSWORD", "")
 ADMIN_MODE = os.getenv("ADMIN_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 LOG_DIR = os.getenv("LOG_DIR", "logs")
+DB_CHANGE_CONSOLE_LOG = os.getenv("DB_CHANGE_CONSOLE_LOG", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 os.makedirs(LOG_DIR, exist_ok=True)
 db_change_logger = logging.getLogger("db_changes")
@@ -48,6 +50,31 @@ def log_db_change(action: str, **fields):
     db_change_logger.info(
         json.dumps({"action": action, **fields}, ensure_ascii=False, sort_keys=True)
     )
+    if DB_CHANGE_CONSOLE_LOG:
+        message = format_db_change_message(action, fields)
+        if message:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+            print(f"[{timestamp}] {message}", flush=True)
+
+def format_db_change_message(action: str, fields: dict):
+    name = fields.get("name")
+    if action == "character_add_or_queue" and name:
+        result = fields.get("result")
+        if result == "queued_existing":
+            return f"{name} 추가"
+        if result == "inserted":
+            return f"{name} 추가"
+    if action == "character_deleted" and name:
+        return f"{name} 삭제"
+    if action == "queue_character_removed" and name:
+        return f"{name} 집보내기"
+    if action == "queue_cleared":
+        return f"전체 집보내기 ({fields.get('deleted_queue', 0)}명)"
+    if action == "db_cleared":
+        return f"DB 비우기 (캐릭터 {fields.get('deleted_chars', 0)}명, 대기열 {fields.get('deleted_queue', 0)}명)"
+    if action == "queue_normalized":
+        return f"대기열 정리 ({fields.get('deleted_queue', 0)}명)"
+    return None
 
 def get_conn():
     con = sqlite3.connect(DB)

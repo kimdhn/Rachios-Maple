@@ -309,6 +309,17 @@ function useScreenCoordinateSystem() {
   ctx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
 }
 
+function worldToScreen(viewport, x, y) {
+  return {
+    x: (x - viewport.sx) * viewport.scale,
+    y: (y - viewport.sy) * viewport.scale
+  };
+}
+
+function snapToDevicePixel(value) {
+  return Math.round(value * canvasDpr) / canvasDpr;
+}
+
 function getPlatformPath(platform) {
   if (Array.isArray(platform.path) && platform.path.length > 0) {
     return platform.path
@@ -637,23 +648,27 @@ function drawFallbackScene(targetCtx) {
   targetCtx.fillRect(0, WORLD_H - 90, WORLD_W, 90);
 }
 
-function drawNameplate(targetCtx, name, centerX, characterBottomY, maxWidth) {
+function drawNameplate(targetCtx, name, centerX, characterBottomY, maxWidth, uiScale = 1) {
   targetCtx.save();
   targetCtx.textAlign = "center";
   targetCtx.textBaseline = "middle";
-  targetCtx.font = `${NAMEPLATE_FONT_SIZE}px ${NAMEPLATE_FONT_FAMILY}`;
+  const fontSize = Math.max(12, Math.round(NAMEPLATE_FONT_SIZE * uiScale));
+  const horizontalPadding = Math.max(8, Math.round(NAMEPLATE_H_PADDING * uiScale));
+  const verticalPadding = Math.max(6, Math.round(NAMEPLATE_V_PADDING * uiScale));
+  const gap = Math.max(2, Math.round(NAMEPLATE_GAP * uiScale));
+  targetCtx.font = `${fontSize}px ${NAMEPLATE_FONT_FAMILY}`;
 
   const textWidth = targetCtx.measureText(name).width;
-  const plateWidth = Math.ceil(textWidth + NAMEPLATE_H_PADDING * 2);
-  const plateHeight = NAMEPLATE_FONT_SIZE + NAMEPLATE_V_PADDING * 2;
+  const plateWidth = Math.ceil(textWidth + horizontalPadding * 2);
+  const plateHeight = fontSize + verticalPadding * 2;
   const clampedCenterX = clamp(
     centerX,
     plateWidth / 2 + 4,
     maxWidth - plateWidth / 2 - 4
   );
   const plateX = Math.round(clampedCenterX - plateWidth / 2);
-  const plateY = Math.round(characterBottomY + NAMEPLATE_GAP);
-  const radius = 6;
+  const plateY = Math.round(characterBottomY + gap);
+  const radius = Math.max(4, Math.round(6 * uiScale));
 
   targetCtx.fillStyle = "rgba(0, 0, 0, 0.68)";
   targetCtx.beginPath();
@@ -749,6 +764,99 @@ function drawCharacterInWorld(ch, targetCtx) {
   );
 }
 
+function drawCharacterOnScreen(ch, viewport) {
+  if (ch.hidden) {
+    return;
+  }
+
+  const frameInfo = getCurrentFrameInfo(ch);
+  const img = frameInfo?.img || null;
+  const trim = getTrimmedSprite(img);
+  const frameOffset = getFrameRenderOffset(ch.platformConfig, frameInfo);
+
+  const naturalW = trim ? trim.sw : (img?.naturalWidth || DEFAULT_CHAR_W);
+  const naturalH = trim ? trim.sh : (img?.naturalHeight || DEFAULT_CHAR_H);
+  const spriteScale = Math.max(
+    1,
+    Math.round(CHARACTER_UPSCALE_FACTOR * viewport.scale * 2) / 2
+  );
+  const drawWidth = Math.max(1, snapToDevicePixel(naturalW * spriteScale));
+  const drawHeight = Math.max(1, snapToDevicePixel(naturalH * spriteScale));
+  const bottomLeft = worldToScreen(
+    viewport,
+    ch.spriteBottomLeftX + frameOffset.x,
+    ch.spriteBottomLeftY + frameOffset.y
+  );
+  const drawX = snapToDevicePixel(
+    ch.direction < 0 ? bottomLeft.x - drawWidth : bottomLeft.x
+  );
+  const drawY = snapToDevicePixel(bottomLeft.y - drawHeight);
+
+  if (img && img.complete && img.naturalWidth > 0 && trim) {
+    ctx.imageSmoothingEnabled = false;
+    if (ch.direction > 0) {
+      ctx.save();
+      ctx.translate(drawX + drawWidth / 2, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(
+        img,
+        trim.sx,
+        trim.sy,
+        trim.sw,
+        trim.sh,
+        -drawWidth / 2,
+        drawY,
+        drawWidth,
+        drawHeight
+      );
+      ctx.restore();
+    } else {
+      ctx.drawImage(
+        img,
+        trim.sx,
+        trim.sy,
+        trim.sw,
+        trim.sh,
+        drawX,
+        drawY,
+        drawWidth,
+        drawHeight
+      );
+    }
+  } else {
+    ctx.fillStyle = "#f5f5f5";
+    ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
+    ctx.strokeStyle = "#666";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(drawX, drawY, drawWidth, drawHeight);
+  }
+
+  if (ch.nameplateCenterX === null && img && img.complete && img.naturalWidth > 0 && trim) {
+    ch.nameplateCenterX = ch.direction < 0
+      ? ch.spriteBottomLeftX - (naturalW * CHARACTER_UPSCALE_FACTOR) / 2
+      : ch.spriteBottomLeftX + (naturalW * CHARACTER_UPSCALE_FACTOR) / 2;
+    ch.nameplateBottomY = ch.spriteBottomLeftY;
+  }
+
+  const fallbackCenterX = ch.direction < 0
+    ? ch.spriteBottomLeftX - (naturalW * CHARACTER_UPSCALE_FACTOR) / 2
+    : ch.spriteBottomLeftX + (naturalW * CHARACTER_UPSCALE_FACTOR) / 2;
+  const plateCenter = worldToScreen(
+    viewport,
+    ch.nameplateCenterX ?? fallbackCenterX,
+    ch.nameplateBottomY ?? ch.spriteBottomLeftY
+  );
+
+  drawNameplate(
+    ctx,
+    ch.name,
+    snapToDevicePixel(plateCenter.x),
+    snapToDevicePixel(plateCenter.y),
+    sceneWidth,
+    viewport.scale
+  );
+}
+
 function render(timestamp = performance.now()) {
   if (lastRenderTime === null) {
     lastRenderTime = timestamp;
@@ -758,26 +866,32 @@ function render(timestamp = performance.now()) {
 
   updateCharacters(timestamp, deltaMs);
 
-  resizeSourceScene();
-  sourceSceneCtx.setTransform(1, 0, 0, 1, 0, 0);
-  sourceSceneCtx.clearRect(0, 0, WORLD_W, WORLD_H);
-
-  if (bg.complete && bg.naturalWidth > 0 && bg.naturalHeight > 0) {
-    sourceSceneCtx.imageSmoothingEnabled = true;
-    sourceSceneCtx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
-  } else {
-    drawFallbackScene(sourceSceneCtx);
-  }
-
-  for (const ch of chars) {
-    drawCharacterInWorld(ch, sourceSceneCtx);
-  }
-
   const viewport = getSourceSceneViewport();
+  if (!viewport) {
+    requestAnimationFrame(render);
+    return;
+  }
 
-  if (viewport) {
-    useScreenCoordinateSystem();
-    ctx.clearRect(0, 0, sceneWidth, sceneHeight);
+  useScreenCoordinateSystem();
+  ctx.clearRect(0, 0, sceneWidth, sceneHeight);
+  if (bg.complete && bg.naturalWidth > 0 && bg.naturalHeight > 0) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(
+      bg,
+      viewport.sx,
+      viewport.sy,
+      viewport.sw,
+      viewport.sh,
+      0,
+      0,
+      sceneWidth,
+      sceneHeight
+    );
+  } else {
+    resizeSourceScene();
+    sourceSceneCtx.setTransform(1, 0, 0, 1, 0, 0);
+    sourceSceneCtx.clearRect(0, 0, WORLD_W, WORLD_H);
+    drawFallbackScene(sourceSceneCtx);
     ctx.drawImage(
       sourceSceneCanvas,
       viewport.sx,
@@ -789,6 +903,10 @@ function render(timestamp = performance.now()) {
       sceneWidth,
       sceneHeight
     );
+  }
+
+  for (const ch of chars) {
+    drawCharacterOnScreen(ch, viewport);
   }
   requestAnimationFrame(render);
 }

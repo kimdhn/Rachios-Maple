@@ -73,6 +73,10 @@ if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
 }
 
+if (-not (Test-Path "logs")) {
+    New-Item -ItemType Directory -Path "logs" | Out-Null
+}
+
 $apiKey = Get-EnvValue "NEXON_OPEN_API_KEY"
 if ([string]::IsNullOrWhiteSpace($apiKey) -or $apiKey -eq "YOUR_NEXON_OPEN_API_KEY") {
     Write-Host ""
@@ -113,10 +117,9 @@ if ([string]::IsNullOrWhiteSpace($appHost)) {
 if ([string]::IsNullOrWhiteSpace($appPort)) {
     $appPort = "1939"
 }
-$displayHost = $appHost
-if ($displayHost -eq "0.0.0.0" -or $displayHost -eq "::") {
-    $displayHost = "127.0.0.1"
+Write-Host "Starting server: http://${appHost}:${appPort}"
+if ($appHost -eq "0.0.0.0" -or $appHost -eq "::") {
+    Write-Host "Local access: http://127.0.0.1:${appPort}"
 }
-
-Write-Host "Starting server: http://${displayHost}:${appPort}"
+Write-Host "DB change log: $(Join-Path $ProjectRoot 'logs\db_changes.log')"
 uv run python app.py

@@ -116,3 +116,5 @@ sqlite3 db.sqlite3 ".read query/CLEAN_DB.sql"
 - `query/CLEAN_DB.sql`: `chars`, `char_queue`를 모두 비웁니다. 캐릭터 정보와 랭킹 데이터까지 삭제됩니다.
 
 UI의 `집 보내기`, `DB 비우기` 버튼도 같은 작업을 수행합니다. 버튼을 누르면 관리 비밀번호를 입력해야 하며, 이 값은 `.env`의 `DB_ADMIN_PASSWORD`와 비교됩니다. `DB 비우기` 버튼은 `.env`에서 `ADMIN_MODE=1`로 실행한 경우에만 표시됩니다.
+
+DB 변경 이력은 `logs/db_changes.log`에 남습니다. 실행 스크립트(`scripts/run.sh`, `scripts/run.ps1`)는 서버 시작 전에 `logs/` 폴더를 자동으로 만듭니다.

@@ -38,6 +38,8 @@ if [ ! -f ".env" ]; then
   cp .env.example .env
 fi
 
+mkdir -p logs
+
 api_key=$(get_env_value "NEXON_OPEN_API_KEY" || true)
 if [ -z "$api_key" ] || [ "$api_key" = "YOUR_NEXON_OPEN_API_KEY" ]; then
   echo ""
@@ -80,10 +82,9 @@ fi
 if [ -z "$app_port" ]; then
   app_port="1939"
 fi
-display_host="$app_host"
-if [ "$display_host" = "0.0.0.0" ] || [ "$display_host" = "::" ]; then
-  display_host="127.0.0.1"
+echo "서버를 실행합니다: http://${app_host}:${app_port}"
+if [ "$app_host" = "0.0.0.0" ] || [ "$app_host" = "::" ]; then
+  echo "로컬 접속 주소: http://127.0.0.1:${app_port}"
 fi
-
-echo "서버를 실행합니다: http://${display_host}:${app_port}"
+echo "DB 변경 로그: ${PROJECT_DIR}/logs/db_changes.log"
 uv run python app.py

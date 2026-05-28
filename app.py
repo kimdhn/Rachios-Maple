@@ -1,6 +1,6 @@
 
-from flask import Flask, request, jsonify, send_from_directory, Response
-import hmac, logging, sqlite3, os, requests
+from flask import Flask, request, jsonify, send_from_directory, Response, has_request_context
+import hmac, json, logging, sqlite3, os, requests
 import flask.cli
 from urllib.parse import unquote, urlparse
 
@@ -29,6 +29,25 @@ NEXON_API_BASE = "https://open.api.nexon.com/maplestory/v1"
 NEXON_API_KEY = os.getenv("NEXON_OPEN_API_KEY", "")
 DB_ADMIN_PASSWORD = os.getenv("DB_ADMIN_PASSWORD", "")
 ADMIN_MODE = os.getenv("ADMIN_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+LOG_DIR = os.getenv("LOG_DIR", "logs")
+
+os.makedirs(LOG_DIR, exist_ok=True)
+db_change_logger = logging.getLogger("db_changes")
+db_change_logger.setLevel(logging.INFO)
+db_change_logger.propagate = False
+if not db_change_logger.handlers:
+    handler = logging.FileHandler(os.path.join(LOG_DIR, "db_changes.log"), encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    db_change_logger.addHandler(handler)
+
+def log_db_change(action: str, **fields):
+    if has_request_context():
+        fields.setdefault("method", request.method)
+        fields.setdefault("path", request.path)
+        fields.setdefault("remote_addr", request.headers.get("X-Forwarded-For", request.remote_addr))
+    db_change_logger.info(
+        json.dumps({"action": action, **fields}, ensure_ascii=False, sort_keys=True)
+    )
 
 def get_conn():
     con = sqlite3.connect(DB)
@@ -65,7 +84,10 @@ def init_db():
         FROM chars
         ORDER BY rowid ASC
         """)
+        migrated_chars = cur.rowcount
         cur.execute("DROP TABLE chars")
+    else:
+        migrated_chars = 0
 
     cur.execute("ALTER TABLE chars_new RENAME TO chars")
     cur.execute("""
@@ -99,8 +121,13 @@ def init_db():
                 (row["name"], slot_index, row["queue_order"], row["queued_at"]),
             )
     cur.execute("DELETE FROM char_queue WHERE name NOT IN (SELECT name FROM chars)")
+    deleted_orphans = cur.rowcount
     con.commit()
     con.close()
+    if has_old_chars:
+        log_db_change("schema_migrated", table="chars", migrated_chars=migrated_chars)
+    if deleted_orphans:
+        log_db_change("queue_orphans_removed", deleted_queue=deleted_orphans)
 
 def parse_qr_payload(payload: str):
     # expected: 00/<look>|<urlencoded_name>|<level>|<power>|<yyyymmdd>|<popularity>
@@ -183,18 +210,22 @@ def parse_queue_limit(value):
     return max(queue_limit, 1)
 
 def normalize_queue(cur, queue_limit: int):
+    deleted = 0
     cur.execute("DELETE FROM char_queue WHERE slot_index >= ?", (queue_limit,))
+    deleted += max(cur.rowcount, 0)
     queue_size = cur.execute("SELECT COUNT(*) FROM char_queue").fetchone()[0]
     if queue_size > queue_limit:
         cur.execute(
             "DELETE FROM char_queue WHERE name IN (SELECT name FROM char_queue ORDER BY queue_order ASC LIMIT ?)",
             (queue_size - queue_limit,),
         )
+        deleted += max(cur.rowcount, 0)
+    return deleted
 
 def add_or_queue_character(data: dict, queue_limit: int):
     con = get_conn()
     cur = con.cursor()
-    normalize_queue(cur, queue_limit)
+    normalized_deleted = normalize_queue(cur, queue_limit)
 
     existing = fetch_character(cur, data["name"])
     if existing:
@@ -213,6 +244,14 @@ def add_or_queue_character(data: dict, queue_limit: int):
 
     con.commit()
     con.close()
+    if action != "noop" or normalized_deleted:
+        log_db_change(
+            "character_add_or_queue",
+            name=data["name"],
+            result=action,
+            queue_limit=queue_limit,
+            normalized_deleted=normalized_deleted,
+        )
     return action, character
 
 def nexon_get(path: str, **params):
@@ -290,6 +329,8 @@ def clean_queue():
     deleted = cur.rowcount
     con.commit()
     con.close()
+    if deleted:
+        log_db_change("queue_cleared", deleted_queue=deleted)
     return deleted
 
 def clean_db():
@@ -301,6 +342,8 @@ def clean_db():
     deleted_chars = cur.rowcount
     con.commit()
     con.close()
+    if deleted_queue or deleted_chars:
+        log_db_change("db_cleared", deleted_queue=deleted_queue, deleted_chars=deleted_chars)
     return deleted_queue, deleted_chars
 
 init_db()
@@ -318,8 +361,10 @@ def list_chars():
     con = get_conn()
     cur = con.cursor()
     queue_limit = parse_queue_limit(request.args.get("limit"))
-    normalize_queue(cur, queue_limit)
+    normalized_deleted = normalize_queue(cur, queue_limit)
     con.commit()
+    if normalized_deleted:
+        log_db_change("queue_normalized", queue_limit=queue_limit, deleted_queue=normalized_deleted)
     rows = [dict(r) for r in cur.execute("""
         SELECT c.*, q.slot_index
         FROM char_queue q
@@ -392,13 +437,15 @@ def delete_char(name):
     con = get_conn()
     cur = con.cursor()
     cur.execute("DELETE FROM char_queue WHERE name = ?", (name,))
+    deleted_queue = cur.rowcount
     cur.execute("DELETE FROM chars WHERE name = ?", (name,))
-    deleted = cur.rowcount
+    deleted_chars = cur.rowcount
     con.commit()
     con.close()
 
-    if deleted == 0:
+    if deleted_chars == 0:
         return jsonify({"ok": False, "error": "해당 캐릭터를 찾지 못했습니다"}), 404
+    log_db_change("character_deleted", name=name, deleted_queue=deleted_queue, deleted_chars=deleted_chars)
     return jsonify({"ok": True, "name": name})
 
 @app.route("/api/queue/<path:name>", methods=["DELETE"])
@@ -416,6 +463,7 @@ def remove_from_queue(name):
 
     if deleted == 0:
         return jsonify({"ok": False, "error": "대기열에서 해당 캐릭터를 찾지 못했습니다"}), 404
+    log_db_change("queue_character_removed", name=name, deleted_queue=deleted)
     return jsonify({"ok": True, "name": name})
 
 @app.route("/api/admin/clean_queue", methods=["POST"])
@@ -487,8 +535,9 @@ def run_local_server():
         flask.cli.show_server_banner = lambda *args, **kwargs: None
         logging.getLogger("werkzeug").disabled = True
 
-    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
-    print(f"Server running at http://{display_host}:{port}")
+    print(f"Server running at http://{host}:{port}")
+    if host in {"0.0.0.0", "::"}:
+        print(f"Local access: http://127.0.0.1:{port}")
     if host == "0.0.0.0":
         print(f"LAN/external access is enabled. Use this machine's LAN IP or forwarded public address with port {port}.")
     app.run(host=host, port=port, debug=debug, use_reloader=False)

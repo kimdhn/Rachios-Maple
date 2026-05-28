@@ -77,6 +77,10 @@ if (-not (Test-Path "logs")) {
     New-Item -ItemType Directory -Path "logs" | Out-Null
 }
 
+if (-not (Test-Path "db.sqlite3")) {
+    Write-Host "db.sqlite3 was not found. A new DB will be created when the server starts."
+}
+
 $apiKey = Get-EnvValue "NEXON_OPEN_API_KEY"
 if ([string]::IsNullOrWhiteSpace($apiKey) -or $apiKey -eq "YOUR_NEXON_OPEN_API_KEY") {
     Write-Host ""

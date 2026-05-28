@@ -39,6 +39,9 @@ if [ ! -f ".env" ]; then
 fi
 
 mkdir -p logs
+if [ ! -f "db.sqlite3" ]; then
+  echo "db.sqlite3가 없어 서버 시작 시 새 DB를 생성합니다."
+fi
 
 api_key=$(get_env_value "NEXON_OPEN_API_KEY" || true)
 if [ -z "$api_key" ] || [ "$api_key" = "YOUR_NEXON_OPEN_API_KEY" ]; then

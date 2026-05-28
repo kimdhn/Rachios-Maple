@@ -1,1 +1,5 @@
 2026-05-28 10:06:02,691 {"action": "schema_migrated", "migrated_chars": 1, "table": "chars"}
+2026-05-28 10:28:21,751 {"action": "schema_migrated", "migrated_chars": 1, "table": "chars"}
+2026-05-28 10:28:35,907 {"action": "character_add_or_queue", "method": "POST", "name": "도돈", "normalized_deleted": 0, "path": "/api/add_name", "queue_limit": 9, "remote_addr": "127.0.0.1", "result": "inserted"}
+2026-05-28 10:29:14,950 {"action": "schema_migrated", "migrated_chars": 2, "table": "chars"}
+2026-05-28 10:30:40,455 {"action": "schema_migrated", "migrated_chars": 2, "table": "chars"}

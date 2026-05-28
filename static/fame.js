@@ -1,0 +1,975 @@
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+const sourceSceneCanvas = document.createElement("canvas");
+const sourceSceneCtx = sourceSceneCanvas.getContext("2d");
+const fameNameInput = document.getElementById("fameNameInput");
+const fameAmountInput = document.getElementById("fameAmountInput");
+const homePageBtn = document.getElementById("homePageBtn");
+const addFameBtn = document.getElementById("addFameBtn");
+const deleteFameBtn = document.getElementById("deleteFameBtn");
+const reloadFameBtn = document.getElementById("reloadFameBtn");
+const famePanel = document.getElementById("famePanel");
+const toast = document.getElementById("toast");
+const passwordModal = document.getElementById("passwordModal");
+const passwordForm = document.getElementById("passwordForm");
+const passwordTitle = document.getElementById("passwordTitle");
+const passwordMessage = document.getElementById("passwordMessage");
+const passwordInput = document.getElementById("passwordInput");
+const passwordCancelBtn = document.getElementById("passwordCancelBtn");
+
+const bg = new Image();
+bg.src = `/static/fame.png?v=${Date.now()}`;
+
+const FAME_WORLD_SIZE = window.FAME_WORLD_SIZE || {};
+const WORLD_W = Number(FAME_WORLD_SIZE.width) || 1376;
+const WORLD_H = Number(FAME_WORLD_SIZE.height) || 768;
+const SCENE_VIEWPORT = window.FAME_SCENE_VIEWPORT || {};
+const FAME_PLATFORMS = window.FAME_PLATFORMS || window.FAME_TOP_PLATFORMS || [];
+const TOP_PLATFORMS = FAME_PLATFORMS.slice(0, 3);
+const ROAMING_PLATFORM = window.FAME_ROAMING_PLATFORM || {
+  imageBottomLeft: { x: WORLD_W / 2, y: WORLD_H - 90 },
+  path: [{ x: 160, y: WORLD_H - 90 }, { x: WORLD_W - 160, y: WORLD_H - 90 }],
+  walkRange: { minX: 160, maxX: WORLD_W - 160 },
+  walk: { enabled: true }
+};
+const FRAME_SOURCE_PLATFORMS = [...FAME_PLATFORMS, ROAMING_PLATFORM];
+
+const DEFAULT_CHAR_W = 80;
+const DEFAULT_CHAR_H = 120;
+const NAMEPLATE_FONT_FAMILY = "'Press Start 2P', monospace";
+const NAMEPLATE_FONT_SIZE = 21;
+const NAMEPLATE_H_PADDING = 18;
+const NAMEPLATE_V_PADDING = 14;
+const NAMEPLATE_GAP = 4;
+const DEFAULT_MOTION_FRAME_TICKS = 18;
+const FIXED_WMOTION = "W04";
+const CHARACTER_UPSCALE_FACTOR = 3;
+const DEFAULT_RENDER_QUERY = {
+  emotion: "E00"
+};
+const FAME_FIXED_ACTION = "A00";
+const DEFAULT_IDLE_FRAMES = [{ action: "A00" }];
+const DEFAULT_WALK_FRAMES = [{ action: "A02" }, { action: "A03" }];
+
+const AVAILABLE_FRAME_KEYS = [
+  ...new Set(
+    FRAME_SOURCE_PLATFORMS.flatMap((platform) => {
+      const render = {
+        ...DEFAULT_RENDER_QUERY,
+        ...(platform.render || {}),
+        emotion: getPlatformEmotion(platform)
+      };
+      return getPlatformFrames(platform, "idle")
+        .concat(getPlatformFrames(platform, "walk"))
+        .map((frame) => serializeFrameParams(render, frame));
+    })
+  )
+];
+
+let chars = [];
+let imageCache = new Map();
+let imageMetricsCache = new WeakMap();
+let lastRenderTime = null;
+let sceneWidth = 1;
+let sceneHeight = 1;
+let canvasDpr = 1;
+let pendingPasswordResolve = null;
+
+function resizeSourceScene() {
+  if (sourceSceneCanvas.width !== WORLD_W || sourceSceneCanvas.height !== WORLD_H) {
+    sourceSceneCanvas.width = WORLD_W;
+    sourceSceneCanvas.height = WORLD_H;
+  }
+}
+
+function resizeCanvas() {
+  const nextWidth = Math.max(window.innerWidth, 1);
+  const nextHeight = Math.max(window.innerHeight, 1);
+  const nextDpr = Math.max(window.devicePixelRatio || 1, 1);
+  const nextPixelWidth = Math.round(nextWidth * nextDpr);
+  const nextPixelHeight = Math.round(nextHeight * nextDpr);
+
+  if (
+    sceneWidth === nextWidth &&
+    sceneHeight === nextHeight &&
+    canvasDpr === nextDpr &&
+    canvas.width === nextPixelWidth &&
+    canvas.height === nextPixelHeight
+  ) {
+    return;
+  }
+
+  sceneWidth = nextWidth;
+  sceneHeight = nextHeight;
+  canvasDpr = nextDpr;
+  canvas.width = nextPixelWidth;
+  canvas.height = nextPixelHeight;
+  canvas.style.width = `${nextWidth}px`;
+  canvas.style.height = `${nextHeight}px`;
+  ctx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.remove("hidden");
+  setTimeout(() => toast.classList.add("hidden"), 2200);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function randomBetween(min, max) {
+  if (max <= min) {
+    return min;
+  }
+  return min + Math.random() * (max - min);
+}
+
+function appendFrameNumber(code, frameNumber) {
+  if (frameNumber === null || frameNumber === undefined) {
+    return code;
+  }
+  return `${code}.${frameNumber}`;
+}
+
+function makePingPongNumbers(maxFrame) {
+  const max = Math.max(0, Number(maxFrame) || 0);
+  const frames = [];
+  for (let frame = 0; frame <= max; frame += 1) {
+    frames.push(frame);
+  }
+  for (let frame = max - 1; frame > 0; frame -= 1) {
+    frames.push(frame);
+  }
+  return frames.length ? frames : [0];
+}
+
+function getPlatformAction(platform) {
+  return FAME_FIXED_ACTION;
+}
+
+function getPlatformEmotion(platform) {
+  return platform.emotion || platform.render?.emotion || DEFAULT_RENDER_QUERY.emotion;
+}
+
+function serializeFrameParams(render, frame) {
+  const emotion = frame.emotion || render.emotion || DEFAULT_RENDER_QUERY.emotion;
+  const params = {
+    ...render,
+    emotion: appendFrameNumber(emotion, frame.emotionFrame),
+    action: appendFrameNumber(frame.action, frame.actionFrame),
+    wmotion: FIXED_WMOTION
+  };
+  return JSON.stringify(params);
+}
+
+function deserializeFrameParams(key) {
+  return JSON.parse(key);
+}
+
+function makeImageUrl(look, params) {
+  const query = new URLSearchParams();
+  query.set("action", params.action);
+  query.set("emotion", params.emotion);
+  query.set("wmotion", FIXED_WMOTION);
+  const real = `https://open.api.nexon.com/static/maplestory/character/look/${look}?${query.toString()}`;
+  return `/api/proxy?url=${encodeURIComponent(real)}`;
+}
+
+function preloadCharacterFrames(ch) {
+  ch.frames = {};
+  ch.frameIndex = 0;
+  ch.frameTick = 0;
+
+  for (const key of AVAILABLE_FRAME_KEYS) {
+    const cacheKey = `${ch.look}_${key}`;
+    if (!imageCache.has(cacheKey)) {
+      const img = new Image();
+      const params = deserializeFrameParams(key);
+      img.src = makeImageUrl(ch.look, params);
+      imageCache.set(cacheKey, img);
+    }
+    ch.frames[key] = imageCache.get(cacheKey);
+  }
+}
+
+function getTrimmedSprite(img) {
+  if (!img || !img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
+    return null;
+  }
+
+  if (imageMetricsCache.has(img)) {
+    return imageMetricsCache.get(img);
+  }
+
+  const metricsCanvas = document.createElement("canvas");
+  metricsCanvas.width = img.naturalWidth;
+  metricsCanvas.height = img.naturalHeight;
+  const metricsCtx = metricsCanvas.getContext("2d", { willReadFrequently: true });
+  metricsCtx.drawImage(img, 0, 0);
+
+  const imageData = metricsCtx.getImageData(0, 0, metricsCanvas.width, metricsCanvas.height);
+  const { data, width, height } = imageData;
+  let left = width;
+  let right = -1;
+  let top = height;
+  let bottom = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = data[(y * width + x) * 4 + 3];
+      if (alpha > 16) {
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+
+  if (right < left || bottom < top) {
+    left = 0;
+    right = width - 1;
+    top = 0;
+    bottom = height - 1;
+  }
+
+  const trimmed = {
+    sx: left,
+    sy: top,
+    sw: right - left + 1,
+    sh: bottom - top + 1
+  };
+  imageMetricsCache.set(img, trimmed);
+  return trimmed;
+}
+
+function getSourceSceneViewport() {
+  if (sceneWidth <= 0 || sceneHeight <= 0) {
+    return null;
+  }
+
+  const viewportAspect = sceneWidth / sceneHeight;
+  const worldAspect = WORLD_W / WORLD_H;
+  let cropWidth = WORLD_W;
+  let cropHeight = WORLD_H;
+
+  if (viewportAspect > worldAspect) {
+    cropWidth = WORLD_W;
+    cropHeight = WORLD_W / viewportAspect;
+  } else {
+    cropHeight = WORLD_H;
+    cropWidth = WORLD_H * viewportAspect;
+  }
+
+  const cameraOffsetX = Number(SCENE_VIEWPORT.cameraOffsetX) || 0;
+  const cameraOffsetY = Number(SCENE_VIEWPORT.cameraOffsetY) || 0;
+  const cameraX = WORLD_W / 2 + cameraOffsetX;
+  const cameraY = WORLD_H / 2 + cameraOffsetY;
+  const cropX = clamp(cameraX - cropWidth / 2, 0, WORLD_W - cropWidth);
+  const cropY = clamp(cameraY - cropHeight / 2, 0, WORLD_H - cropHeight);
+
+  return {
+    sx: cropX,
+    sy: cropY,
+    sw: cropWidth,
+    sh: cropHeight
+  };
+}
+
+function useScreenCoordinateSystem() {
+  ctx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
+}
+
+function clonePlatform(platform) {
+  return JSON.parse(JSON.stringify(platform));
+}
+
+function getPlatformForRank(index) {
+  if (index < FAME_PLATFORMS.length) {
+    return clonePlatform(FAME_PLATFORMS[index]);
+  }
+  return clonePlatform(ROAMING_PLATFORM);
+}
+
+function getPlatformPath(platform) {
+  if (Array.isArray(platform.path) && platform.path.length > 0) {
+    return platform.path
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+      .map((point) => ({ x: point.x, y: point.y }))
+      .sort((a, b) => a.x - b.x);
+  }
+
+  const anchor = getPlatformAnchorPoint(platform);
+  const y = anchor.y;
+  const minX = platform.walkRange?.minX ?? anchor.x;
+  const maxX = platform.walkRange?.maxX ?? anchor.x;
+  return [
+    { x: minX, y },
+    { x: maxX, y }
+  ].sort((a, b) => a.x - b.x);
+}
+
+function getPlatformAnchorPoint(platform) {
+  return platform.imageBottomLeft || platform.imageBottomCenter || { x: 0, y: 0 };
+}
+
+function getPlatformXRange(platform) {
+  const path = getPlatformPath(platform);
+  const xs = path.map((point) => point.x);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs)
+  };
+}
+
+function getPlatformY(platform, x) {
+  const path = getPlatformPath(platform);
+  if (path.length === 0) {
+    return getPlatformAnchorPoint(platform).y;
+  }
+  if (path.length === 1) {
+    return path[0].y;
+  }
+
+  const clampedX = clamp(x, path[0].x, path[path.length - 1].x);
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const start = path[i];
+    const end = path[i + 1];
+    const minX = Math.min(start.x, end.x);
+    const maxX = Math.max(start.x, end.x);
+
+    if (clampedX < minX || clampedX > maxX) {
+      continue;
+    }
+    if (start.x === end.x) {
+      return end.y;
+    }
+
+    const t = (clampedX - start.x) / (end.x - start.x);
+    return start.y + (end.y - start.y) * t;
+  }
+
+  return path[path.length - 1].y;
+}
+
+function getPlatformFrames(platform, stateName) {
+  if (platform.move) {
+    const actionFrameMax = Math.max(0, Number(platform.actionFrameMax) || 0);
+    const emotionFrameMax = Math.max(0, Number(platform.emotionFrameMax) || 0);
+    const frames = makePingPongNumbers(Math.max(actionFrameMax, emotionFrameMax));
+    const action = getPlatformAction(platform);
+    const emotion = getPlatformEmotion(platform);
+
+    return frames.map((frame) => ({
+      action,
+      actionFrame: actionFrameMax > 0 ? Math.min(frame, actionFrameMax) : null,
+      emotion,
+      emotionFrame: emotionFrameMax > 0 ? Math.min(frame, emotionFrameMax) : null
+    }));
+  }
+
+  if (platform.action || platform.emotion) {
+    return [{
+      action: FAME_FIXED_ACTION,
+      emotion: getPlatformEmotion(platform)
+    }];
+  }
+
+  if (stateName === "walk") {
+    return [{ action: FAME_FIXED_ACTION }];
+  }
+  return [{ action: FAME_FIXED_ACTION }];
+}
+
+function getCurrentFrameInfo(ch) {
+  if (!ch.frames || !ch.platformConfig) {
+    return null;
+  }
+  const frames = getPlatformFrames(ch.platformConfig, ch.moveState);
+  const frameIndex = (ch.frameIndex || 0) % frames.length;
+  const frame = frames[frameIndex];
+  const key = serializeFrameParams(
+    {
+      ...DEFAULT_RENDER_QUERY,
+      ...(ch.platformConfig.render || {}),
+      emotion: getPlatformEmotion(ch.platformConfig)
+    },
+    frame
+  );
+  return {
+    img: ch.frames[key] || null,
+    frame,
+    frameIndex
+  };
+}
+
+function getPlatformFrameTicks(platform) {
+  const ticks = Number(platform.frameTicks ?? platform.motionFrameTicks);
+  if (!Number.isFinite(ticks) || ticks <= 0) {
+    return DEFAULT_MOTION_FRAME_TICKS;
+  }
+  return Math.max(1, Math.round(ticks));
+}
+
+function getFrameRenderOffset(platform, frameInfo) {
+  const base = {
+    x: Number(platform.renderOffset?.x) || 0,
+    y: Number(platform.renderOffset?.y) || 0
+  };
+  const offsets = platform.frameOffsets;
+  if (!offsets || !frameInfo?.frame) {
+    return base;
+  }
+
+  const frame = frameInfo.frame;
+  const frameIndex = frameInfo.frameIndex;
+  let offset = { x: 0, y: 0 };
+  const actionKey = frame.actionFrame === null || frame.actionFrame === undefined
+    ? null
+    : `action:${frame.actionFrame}`;
+  const emotionKey = frame.emotionFrame === null || frame.emotionFrame === undefined
+    ? null
+    : `emotion:${frame.emotionFrame}`;
+
+  if (Array.isArray(offsets)) {
+    offset = offsets[frameIndex] || offset;
+  } else {
+    offset =
+      offsets[`index:${frameIndex}`] ||
+      offsets[frameIndex] ||
+      (actionKey ? offsets[actionKey] : null) ||
+      (emotionKey ? offsets[emotionKey] : null) ||
+      offsets.default ||
+      offset;
+  }
+
+  return {
+    x: base.x + (Number(offset.x) || 0),
+    y: base.y + (Number(offset.y) || 0)
+  };
+}
+
+function getRandomPointInWalkRange(platform) {
+  const { minX, maxX } = getPlatformXRange(platform);
+  return randomBetween(minX, maxX);
+}
+
+function resetCharacterState(ch, platform, index) {
+  const walk = platform.walk || {};
+  const { minX, maxX } = getPlatformXRange(platform);
+  ch.platformConfig = platform;
+  ch.hidden = false;
+  const anchor = getPlatformAnchorPoint(platform);
+  ch.spriteBottomLeftX = walk.enabled
+    ? getRandomPointInWalkRange(platform)
+    : clamp(anchor.x, minX, maxX);
+  ch.spriteBottomLeftY = getPlatformY(platform, ch.spriteBottomLeftX);
+  ch.walkTargetX = ch.spriteBottomLeftX;
+  ch.direction = platform.direction ?? (index % 2 === 0 ? 1 : -1);
+  ch.nameplateCenterX = null;
+  ch.nameplateBottomY = null;
+  ch.moveState = "idle";
+  ch.speed = 0;
+  ch.stateUntil = performance.now() + randomBetween(walk.idleMinMs || 1200, walk.idleMaxMs || 2400);
+  ch.frameIndex = 0;
+  ch.frameTick = 0;
+}
+
+function assignPosition(ch, index) {
+  resetCharacterState(ch, getPlatformForRank(index), index);
+}
+
+async function loadFame() {
+  const res = await fetch("/api/fame/list");
+  const nextRows = await res.json();
+  const existingByName = new Map(chars.map((ch) => [ch.name, ch]));
+
+  chars = nextRows.map((row, index) => {
+    const existing = existingByName.get(row.name);
+    if (existing && existing.rankIndex === index) {
+      Object.assign(existing, row);
+      existing.hidden = false;
+      return existing;
+    }
+
+    const ch = { ...row, rankIndex: index };
+    assignPosition(ch, index);
+    preloadCharacterFrames(ch);
+    return ch;
+  });
+
+  renderRankList();
+}
+
+function updateFrameAnimation(ch) {
+  const frames = getPlatformFrames(ch.platformConfig, ch.moveState);
+  if (frames.length <= 1) {
+    ch.frameIndex = 0;
+    ch.frameTick = 0;
+    return;
+  }
+
+  ch.frameTick = (ch.frameTick || 0) + 1;
+  if (ch.frameTick >= getPlatformFrameTicks(ch.platformConfig)) {
+    ch.frameTick = 0;
+    ch.frameIndex = ((ch.frameIndex || 0) + 1) % frames.length;
+  }
+}
+
+function setIdleState(ch, now) {
+  const walk = ch.platformConfig.walk || {};
+  ch.moveState = "idle";
+  ch.speed = 0;
+  ch.spriteBottomLeftY = getPlatformY(ch.platformConfig, ch.spriteBottomLeftX);
+  ch.walkTargetX = ch.spriteBottomLeftX;
+  ch.stateUntil = now + randomBetween(walk.idleMinMs || 1200, walk.idleMaxMs || 2400);
+  ch.frameIndex = 0;
+  ch.frameTick = 0;
+}
+
+function setWalkState(ch, now) {
+  const walk = ch.platformConfig.walk || {};
+  if (!walk.enabled) {
+    setIdleState(ch, now);
+    return;
+  }
+  ch.moveState = "walk";
+  ch.speed = randomBetween(walk.speedMin || 24, walk.speedMax || 44);
+  const { minX, maxX } = getPlatformXRange(ch.platformConfig);
+  ch.walkTargetX = getRandomPointInWalkRange(ch.platformConfig);
+  if (Math.abs(ch.walkTargetX - ch.spriteBottomLeftX) < 4) {
+    ch.walkTargetX = ch.spriteBottomLeftX < (minX + maxX) / 2
+      ? maxX
+      : minX;
+  }
+  ch.direction = ch.walkTargetX >= ch.spriteBottomLeftX ? 1 : -1;
+  ch.stateUntil = Number.POSITIVE_INFINITY;
+  ch.frameIndex = 0;
+  ch.frameTick = 0;
+}
+
+function updateMovement(ch, deltaMs, now) {
+  const walk = ch.platformConfig.walk || {};
+  if (!walk.enabled) {
+    return;
+  }
+
+  if (ch.moveState === "idle") {
+    if (now >= ch.stateUntil) {
+      setWalkState(ch, now);
+    }
+    return;
+  }
+
+  const { minX, maxX } = getPlatformXRange(ch.platformConfig);
+  const targetX = clamp(ch.walkTargetX ?? ch.spriteBottomLeftX, minX, maxX);
+  const distanceToTarget = targetX - ch.spriteBottomLeftX;
+  ch.direction = distanceToTarget >= 0 ? 1 : -1;
+
+  const stepX = ch.direction * ch.speed * (deltaMs / 1000);
+  if (Math.abs(stepX) >= Math.abs(distanceToTarget)) {
+    ch.spriteBottomLeftX = targetX;
+    ch.spriteBottomLeftY = getPlatformY(ch.platformConfig, ch.spriteBottomLeftX);
+    setIdleState(ch, now);
+    return;
+  }
+
+  ch.spriteBottomLeftX = clamp(ch.spriteBottomLeftX + stepX, minX, maxX);
+  ch.spriteBottomLeftY = getPlatformY(ch.platformConfig, ch.spriteBottomLeftX);
+}
+
+function updateCharacters(now, deltaMs) {
+  for (const ch of chars) {
+    if (ch.hidden || !ch.platformConfig) {
+      continue;
+    }
+    updateMovement(ch, deltaMs, now);
+    updateFrameAnimation(ch);
+  }
+}
+
+function formatAmount(value) {
+  return Math.trunc(Number(value) || 0).toLocaleString("ko-KR");
+}
+
+function parseAmountInput(value) {
+  const text = String(value).replace(/,/g, "").trim();
+  if (!text) {
+    throw new Error("금액을 입력해주세요");
+  }
+  if (!/^\d+$/.test(text)) {
+    throw new Error("금액은 0 이상의 정수로 입력해주세요");
+  }
+  return Number(text);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderRankList() {
+  if (!chars.length) {
+    famePanel.innerHTML = `<div class="empty-rank">Fame 기록 없음</div>`;
+    return;
+  }
+
+  famePanel.innerHTML = chars.map((ch, index) => `
+    <div class="rank-row rank-${index < 3 ? index + 1 : "default"}">
+      <span class="rank-num">${index + 1}</span>
+      <span class="rank-name">${escapeHtml(ch.name)}</span>
+      <span class="rank-meta">${formatAmount(ch.amount)}</span>
+    </div>
+  `).join("");
+}
+
+function drawFallbackScene(targetCtx) {
+  targetCtx.fillStyle = "#2b3340";
+  targetCtx.fillRect(0, 0, WORLD_W, WORLD_H);
+}
+
+function drawNameplate(targetCtx, ch, centerX, characterBottomY, maxWidth) {
+  const name = ch.name;
+  const amount = formatAmount(ch.amount);
+  targetCtx.save();
+  targetCtx.textAlign = "center";
+  targetCtx.textBaseline = "middle";
+  targetCtx.font = `${NAMEPLATE_FONT_SIZE}px ${NAMEPLATE_FONT_FAMILY}`;
+
+  const nameWidth = targetCtx.measureText(name).width;
+  const amountWidth = targetCtx.measureText(amount).width;
+  const plateWidth = Math.ceil(Math.max(nameWidth, amountWidth) + NAMEPLATE_H_PADDING * 2);
+  const lineHeight = NAMEPLATE_FONT_SIZE + 5;
+  const plateHeight = lineHeight * 2 + NAMEPLATE_V_PADDING * 2;
+  const clampedCenterX = clamp(
+    centerX,
+    plateWidth / 2 + 4,
+    maxWidth - plateWidth / 2 - 4
+  );
+  const plateX = Math.round(clampedCenterX - plateWidth / 2);
+  const plateY = Math.round(characterBottomY + NAMEPLATE_GAP);
+  const radius = 6;
+
+  const rankColors = [
+    "rgba(216, 169, 35, 0.88)",
+    "rgba(154, 168, 183, 0.88)",
+    "rgba(189, 120, 69, 0.88)"
+  ];
+  targetCtx.fillStyle = rankColors[ch.rankIndex] || "rgba(0, 0, 0, 0.68)";
+  targetCtx.beginPath();
+  targetCtx.moveTo(plateX + radius, plateY);
+  targetCtx.lineTo(plateX + plateWidth - radius, plateY);
+  targetCtx.quadraticCurveTo(plateX + plateWidth, plateY, plateX + plateWidth, plateY + radius);
+  targetCtx.lineTo(plateX + plateWidth, plateY + plateHeight - radius);
+  targetCtx.quadraticCurveTo(plateX + plateWidth, plateY + plateHeight, plateX + plateWidth - radius, plateY + plateHeight);
+  targetCtx.lineTo(plateX + radius, plateY + plateHeight);
+  targetCtx.quadraticCurveTo(plateX, plateY + plateHeight, plateX, plateY + plateHeight - radius);
+  targetCtx.lineTo(plateX, plateY + radius);
+  targetCtx.quadraticCurveTo(plateX, plateY, plateX + radius, plateY);
+  targetCtx.closePath();
+  targetCtx.fill();
+
+  targetCtx.fillStyle = "#f8f8f8";
+  targetCtx.imageSmoothingEnabled = false;
+  targetCtx.fillText(name, Math.round(clampedCenterX), Math.round(plateY + NAMEPLATE_V_PADDING + lineHeight / 2));
+  targetCtx.fillText(amount, Math.round(clampedCenterX), Math.round(plateY + NAMEPLATE_V_PADDING + lineHeight * 1.5));
+  targetCtx.restore();
+}
+
+function drawCharacterInWorld(ch, targetCtx) {
+  if (ch.hidden) {
+    return;
+  }
+
+  const frameInfo = getCurrentFrameInfo(ch);
+  const img = frameInfo?.img || null;
+  const trim = getTrimmedSprite(img);
+  const frameOffset = getFrameRenderOffset(ch.platformConfig, frameInfo);
+
+  const naturalW = trim ? trim.sw : (img?.naturalWidth || DEFAULT_CHAR_W);
+  const naturalH = trim ? trim.sh : (img?.naturalHeight || DEFAULT_CHAR_H);
+  const drawWidth = Math.max(1, Math.round(naturalW * CHARACTER_UPSCALE_FACTOR));
+  const drawHeight = Math.max(1, Math.round(naturalH * CHARACTER_UPSCALE_FACTOR));
+  const drawX = Math.round(
+    (ch.direction < 0
+      ? ch.spriteBottomLeftX - drawWidth
+      : ch.spriteBottomLeftX) + frameOffset.x
+  );
+  const drawY = Math.round(ch.spriteBottomLeftY - drawHeight + frameOffset.y);
+
+  if (img && img.complete && img.naturalWidth > 0 && trim) {
+    targetCtx.imageSmoothingEnabled = false;
+    if (ch.direction > 0) {
+      targetCtx.save();
+      targetCtx.translate(drawX + drawWidth / 2, 0);
+      targetCtx.scale(-1, 1);
+      targetCtx.drawImage(
+        img,
+        trim.sx,
+        trim.sy,
+        trim.sw,
+        trim.sh,
+        -drawWidth / 2,
+        drawY,
+        drawWidth,
+        drawHeight
+      );
+      targetCtx.restore();
+    } else {
+      targetCtx.drawImage(
+        img,
+        trim.sx,
+        trim.sy,
+        trim.sw,
+        trim.sh,
+        drawX,
+        drawY,
+        drawWidth,
+        drawHeight
+      );
+    }
+  } else {
+    targetCtx.fillStyle = "#f5f5f5";
+    targetCtx.fillRect(drawX, drawY, drawWidth, drawHeight);
+    targetCtx.strokeStyle = "#666";
+    targetCtx.lineWidth = 2;
+    targetCtx.strokeRect(drawX, drawY, drawWidth, drawHeight);
+  }
+
+  if (ch.nameplateCenterX === null && img && img.complete && img.naturalWidth > 0 && trim) {
+    ch.nameplateCenterX = drawX + drawWidth / 2;
+    ch.nameplateBottomY = ch.spriteBottomLeftY;
+  }
+
+  drawNameplate(
+    targetCtx,
+    ch,
+    ch.nameplateCenterX ?? (drawX + drawWidth / 2),
+    ch.nameplateBottomY ?? ch.spriteBottomLeftY,
+    WORLD_W
+  );
+}
+
+function render(timestamp = performance.now()) {
+  if (lastRenderTime === null) {
+    lastRenderTime = timestamp;
+  }
+  const deltaMs = Math.min(timestamp - lastRenderTime, 50);
+  lastRenderTime = timestamp;
+
+  updateCharacters(timestamp, deltaMs);
+
+  resizeSourceScene();
+  sourceSceneCtx.setTransform(1, 0, 0, 1, 0, 0);
+  sourceSceneCtx.clearRect(0, 0, WORLD_W, WORLD_H);
+
+  if (bg.complete && bg.naturalWidth > 0 && bg.naturalHeight > 0) {
+    sourceSceneCtx.imageSmoothingEnabled = true;
+    sourceSceneCtx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
+  } else {
+    drawFallbackScene(sourceSceneCtx);
+  }
+
+  for (const ch of chars) {
+    drawCharacterInWorld(ch, sourceSceneCtx);
+  }
+
+  const viewport = getSourceSceneViewport();
+
+  if (viewport) {
+    useScreenCoordinateSystem();
+    ctx.clearRect(0, 0, sceneWidth, sceneHeight);
+    ctx.drawImage(
+      sourceSceneCanvas,
+      viewport.sx,
+      viewport.sy,
+      viewport.sw,
+      viewport.sh,
+      0,
+      0,
+      sceneWidth,
+      sceneHeight
+    );
+  }
+  requestAnimationFrame(render);
+}
+
+function closePasswordModal(value = null) {
+  passwordModal.classList.add("hidden");
+  passwordForm.reset();
+  if (pendingPasswordResolve) {
+    pendingPasswordResolve(value);
+    pendingPasswordResolve = null;
+  }
+}
+
+function requestAdminPassword(message) {
+  if (pendingPasswordResolve) {
+    closePasswordModal(null);
+  }
+  passwordTitle.textContent = "관리 비밀번호";
+  passwordMessage.textContent = message;
+  passwordInput.type = "password";
+  passwordInput.placeholder = "관리 비밀번호";
+  passwordModal.classList.remove("hidden");
+  passwordInput.focus();
+  return new Promise((resolve) => {
+    pendingPasswordResolve = resolve;
+  });
+}
+
+async function upsertFame(name, amount, password) {
+  const res = await fetch("/api/fame", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, amount, password })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Fame 추가 실패");
+  }
+  fameNameInput.value = "";
+  fameAmountInput.value = "";
+  await loadFame();
+}
+
+async function deleteFame(name, password) {
+  const res = await fetch(`/api/fame/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Fame 삭제 실패");
+  }
+  fameNameInput.value = "";
+  await loadFame();
+}
+
+homePageBtn.onclick = () => {
+  location.href = "/";
+};
+
+addFameBtn.onclick = async () => {
+  const name = fameNameInput.value.trim();
+  if (!name) {
+    showToast("캐릭터 닉네임을 입력해주세요");
+    return;
+  }
+
+  let amount;
+  try {
+    amount = parseAmountInput(fameAmountInput.value);
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+
+  try {
+    const password = await requestAdminPassword(`${name} Fame 금액을 추가/갱신합니다`);
+    if (password === null) {
+      return;
+    }
+    if (!password.trim()) {
+      showToast("관리 비밀번호를 입력해주세요");
+      return;
+    }
+    await upsertFame(name, amount, password);
+    showToast("Fame 추가 완료");
+  } catch (e) {
+    showToast(e.message);
+  }
+};
+
+deleteFameBtn.onclick = async () => {
+  const name = fameNameInput.value.trim();
+  if (!name) {
+    showToast("삭제할 캐릭터 닉네임을 입력해주세요");
+    return;
+  }
+
+  try {
+    const password = await requestAdminPassword(`${name} Fame 기록을 삭제합니다`);
+    if (password === null) {
+      return;
+    }
+    if (!password.trim()) {
+      showToast("관리 비밀번호를 입력해주세요");
+      return;
+    }
+    await deleteFame(name, password);
+    showToast("Fame 삭제 완료");
+  } catch (e) {
+    showToast(e.message);
+  }
+};
+
+reloadFameBtn.onclick = async () => {
+  await loadFame();
+  showToast("새로고침 완료");
+};
+
+passwordForm.onsubmit = (event) => {
+  event.preventDefault();
+  closePasswordModal(passwordInput.value);
+};
+
+passwordCancelBtn.onclick = () => closePasswordModal(null);
+
+passwordModal.addEventListener("click", (event) => {
+  if (event.target === passwordModal) {
+    closePasswordModal(null);
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !passwordModal.classList.contains("hidden")) {
+    closePasswordModal(null);
+  }
+});
+
+fameNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    fameAmountInput.focus();
+  }
+});
+
+fameAmountInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addFameBtn.click();
+  }
+});
+
+fameAmountInput.addEventListener("blur", () => {
+  try {
+    const amount = parseAmountInput(fameAmountInput.value);
+    fameAmountInput.value = formatAmount(amount);
+  } catch (e) {
+    if (!fameAmountInput.value.trim()) {
+      return;
+    }
+  }
+});
+
+bg.onload = () => {
+  chars.forEach((ch, index) => {
+    if (!ch.platformConfig) {
+      assignPosition(ch, index);
+    }
+  });
+};
+
+window.addEventListener("resize", resizeCanvas);
+
+resizeCanvas();
+loadFame().then(() => render());

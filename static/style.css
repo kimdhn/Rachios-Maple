@@ -24,7 +24,15 @@ body {
   gap: 8px;
   width: min(330px, calc(100vw - 24px));
 }
-.controls, .ranks, .panel, #scannerWrap {
+.page-nav {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  z-index: 22;
+  display: flex;
+  gap: 6px;
+}
+.controls, .ranks, .panel, #scannerWrap, .page-nav {
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.65);
   border-radius: 8px;
@@ -32,7 +40,9 @@ body {
   backdrop-filter: blur(12px);
   padding: 9px;
 }
-#nameInput {
+#nameInput,
+#fameNameInput,
+#fameAmountInput {
   width: 100%;
   padding: 8px 9px;
   border: 1px solid #c9d3df;
@@ -41,7 +51,9 @@ body {
   outline: none;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-#nameInput:focus {
+#nameInput:focus,
+#fameNameInput:focus,
+#fameAmountInput:focus {
   border-color: #508ac9;
   box-shadow: 0 0 0 3px rgba(80, 138, 201, 0.18);
 }
@@ -64,6 +76,19 @@ body {
 }
 .db-row {
   margin-top: 6px;
+}
+.fame-controls {
+  display: grid;
+  gap: 6px;
+}
+.fame-rank-list {
+  display: grid;
+}
+.empty-rank {
+  width: 100%;
+  color: #526170;
+  font-size: 13px;
+  font-weight: 700;
 }
 button {
   border: 1px solid #c8d2dc;
@@ -150,7 +175,7 @@ button.danger:disabled:hover {
 #scannerWrap {
   position: fixed;
   left: 12px;
-  top: 12px;
+  top: 58px;
   z-index: 25;
   width: 280px;
 }

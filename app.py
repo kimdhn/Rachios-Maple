@@ -47,11 +47,13 @@ def log_db_change(action: str, **fields):
         fields.setdefault("method", request.method)
         fields.setdefault("path", request.path)
         fields.setdefault("remote_addr", request.headers.get("X-Forwarded-For", request.remote_addr))
+    message = format_db_change_message(action, fields)
+    if message:
+        fields.setdefault("message", message)
     db_change_logger.info(
         json.dumps({"action": action, **fields}, ensure_ascii=False, sort_keys=True)
     )
     if DB_CHANGE_CONSOLE_LOG:
-        message = format_db_change_message(action, fields)
         if message:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
             print(f"[{timestamp}] {message}", flush=True)
@@ -68,10 +70,15 @@ def format_db_change_message(action: str, fields: dict):
         return f"{name} 삭제"
     if action == "queue_character_removed" and name:
         return f"{name} 집보내기"
+    if action == "fame_upserted" and name:
+        label = "업데이트" if fields.get("mode") == "updated" else "추가"
+        return f"{name} fame {label} - {fields.get('amount', 0)}"
+    if action == "fame_deleted" and name:
+        return f"{name} Fame 삭제"
     if action == "queue_cleared":
         return f"전체 집보내기 ({fields.get('deleted_queue', 0)}명)"
     if action == "db_cleared":
-        return f"DB 비우기 (캐릭터 {fields.get('deleted_chars', 0)}명, 대기열 {fields.get('deleted_queue', 0)}명)"
+        return f"DB 비우기 (캐릭터 {fields.get('deleted_chars', 0)}명, 대기열 {fields.get('deleted_queue', 0)}명, Fame {fields.get('deleted_fame', 0)}명)"
     if action == "queue_normalized":
         return f"대기열 정리 ({fields.get('deleted_queue', 0)}명)"
     return None
@@ -149,12 +156,24 @@ def init_db():
             )
     cur.execute("DELETE FROM char_queue WHERE name NOT IN (SELECT name FROM chars)")
     deleted_orphans = cur.rowcount
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS fame_entries (
+        name TEXT PRIMARY KEY,
+        amount INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cur.execute("DELETE FROM fame_entries WHERE name NOT IN (SELECT name FROM chars)")
+    deleted_fame_orphans = cur.rowcount
     con.commit()
     con.close()
     if has_old_chars:
         log_db_change("schema_migrated", table="chars", migrated_chars=migrated_chars)
     if deleted_orphans:
         log_db_change("queue_orphans_removed", deleted_queue=deleted_orphans)
+    if deleted_fame_orphans:
+        log_db_change("fame_orphans_removed", deleted_fame=deleted_fame_orphans)
 
 def parse_qr_payload(payload: str):
     # expected: 00/<look>|<urlencoded_name>|<level>|<power>|<yyyymmdd>|<popularity>
@@ -281,6 +300,36 @@ def add_or_queue_character(data: dict, queue_limit: int):
         )
     return action, character
 
+def ensure_character_exists(name: str):
+    con = get_conn()
+    cur = con.cursor()
+    existing = fetch_character(cur, name)
+    con.close()
+    if existing:
+        return existing, False
+
+    character_data = build_character_from_name(name)
+    con = get_conn()
+    cur = con.cursor()
+    insert_character(cur, character_data)
+    character = fetch_character(cur, character_data["name"]) or character_data
+    con.commit()
+    con.close()
+    log_db_change("fame_character_imported", name=character["name"])
+    return character, True
+
+def parse_fame_amount(value):
+    text = str(value).replace(",", "").strip()
+    if not text:
+        raise ValueError("금액을 입력해주세요")
+    try:
+        amount = int(text)
+    except ValueError as exc:
+        raise ValueError("금액은 0 이상의 정수로 입력해주세요") from exc
+    if amount < 0:
+        raise ValueError("금액은 0 이상의 정수로 입력해주세요")
+    return amount
+
 def nexon_get(path: str, **params):
     if not NEXON_API_KEY:
         raise ValueError("NEXON_OPEN_API_KEY is not configured")
@@ -363,21 +412,27 @@ def clean_queue():
 def clean_db():
     con = get_conn()
     cur = con.cursor()
+    cur.execute("DELETE FROM fame_entries")
+    deleted_fame = cur.rowcount
     cur.execute("DELETE FROM char_queue")
     deleted_queue = cur.rowcount
     cur.execute("DELETE FROM chars")
     deleted_chars = cur.rowcount
     con.commit()
     con.close()
-    if deleted_queue or deleted_chars:
-        log_db_change("db_cleared", deleted_queue=deleted_queue, deleted_chars=deleted_chars)
-    return deleted_queue, deleted_chars
+    if deleted_queue or deleted_chars or deleted_fame:
+        log_db_change("db_cleared", deleted_queue=deleted_queue, deleted_chars=deleted_chars, deleted_fame=deleted_fame)
+    return deleted_queue, deleted_chars, deleted_fame
 
 init_db()
 
 @app.route("/")
 def root():
     return send_from_directory("static", "index.html")
+
+@app.route("/fame")
+def fame():
+    return send_from_directory("static", "fame.html")
 
 @app.route("/favicon.ico")
 def favicon():
@@ -404,6 +459,57 @@ def list_chars():
 @app.route("/api/config")
 def app_config():
     return jsonify({"admin_mode": ADMIN_MODE})
+
+@app.route("/api/fame/list")
+def fame_list():
+    con = get_conn()
+    rows = [dict(r) for r in con.execute("""
+        SELECT c.*, f.amount, f.created_at AS fame_created_at, f.updated_at AS fame_updated_at
+        FROM fame_entries f
+        JOIN chars c ON c.name = f.name
+        ORDER BY f.amount DESC, f.name ASC
+    """)]
+    con.close()
+    return jsonify(rows)
+
+@app.route("/api/fame", methods=["POST"])
+def fame_upsert():
+    d = request.get_json(force=True)
+    ok, error = verify_admin_password(d)
+    if not ok:
+        message, status = error
+        return jsonify({"ok": False, "error": message}), status
+
+    name = str(d.get("name", "")).strip()
+    if not name:
+        return jsonify({"ok": False, "error": "캐릭터 닉네임을 입력해주세요"}), 400
+
+    try:
+        amount = parse_fame_amount(d.get("amount"))
+        character, imported = ensure_character_exists(name)
+        con = get_conn()
+        cur = con.cursor()
+        existing_fame = cur.execute(
+            "SELECT 1 FROM fame_entries WHERE name = ?",
+            (character["name"],),
+        ).fetchone()
+        mode = "updated" if existing_fame else "added"
+        cur.execute("""
+            INSERT INTO fame_entries(name, amount, created_at, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(name) DO UPDATE SET
+                amount = excluded.amount,
+                updated_at = CURRENT_TIMESTAMP
+        """, (character["name"], amount))
+        con.commit()
+        con.close()
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "넥슨 API 호출에 실패했습니다"}), 502
+
+    log_db_change("fame_upserted", name=character["name"], amount=amount, imported=imported, mode=mode)
+    return jsonify({"ok": True, "name": character["name"], "amount": amount, "character": character, "mode": mode})
 
 @app.route("/api/add", methods=["POST"])
 def add_char():
@@ -465,6 +571,8 @@ def delete_char(name):
     cur = con.cursor()
     cur.execute("DELETE FROM char_queue WHERE name = ?", (name,))
     deleted_queue = cur.rowcount
+    cur.execute("DELETE FROM fame_entries WHERE name = ?", (name,))
+    deleted_fame = cur.rowcount
     cur.execute("DELETE FROM chars WHERE name = ?", (name,))
     deleted_chars = cur.rowcount
     con.commit()
@@ -472,7 +580,31 @@ def delete_char(name):
 
     if deleted_chars == 0:
         return jsonify({"ok": False, "error": "해당 캐릭터를 찾지 못했습니다"}), 404
-    log_db_change("character_deleted", name=name, deleted_queue=deleted_queue, deleted_chars=deleted_chars)
+    log_db_change("character_deleted", name=name, deleted_queue=deleted_queue, deleted_chars=deleted_chars, deleted_fame=deleted_fame)
+    return jsonify({"ok": True, "name": name})
+
+@app.route("/api/fame/<path:name>", methods=["DELETE"])
+def fame_delete(name):
+    d = request.get_json(silent=True) or {}
+    ok, error = verify_admin_password(d)
+    if not ok:
+        message, status = error
+        return jsonify({"ok": False, "error": message}), status
+
+    name = unquote(name).strip()
+    if not name:
+        return jsonify({"ok": False, "error": "캐릭터 닉네임을 입력해주세요"}), 400
+
+    con = get_conn()
+    cur = con.cursor()
+    cur.execute("DELETE FROM fame_entries WHERE name = ?", (name,))
+    deleted = cur.rowcount
+    con.commit()
+    con.close()
+
+    if deleted == 0:
+        return jsonify({"ok": False, "error": "Fame에서 해당 캐릭터를 찾지 못했습니다"}), 404
+    log_db_change("fame_deleted", name=name, deleted_fame=deleted)
     return jsonify({"ok": True, "name": name})
 
 @app.route("/api/queue/<path:name>", methods=["DELETE"])
@@ -513,11 +645,12 @@ def admin_clean_db():
     if not ok:
         message, status = error
         return jsonify({"ok": False, "error": message}), status
-    deleted_queue, deleted_chars = clean_db()
+    deleted_queue, deleted_chars, deleted_fame = clean_db()
     return jsonify({
         "ok": True,
         "deleted_queue": deleted_queue,
         "deleted_chars": deleted_chars,
+        "deleted_fame": deleted_fame,
     })
 
 @app.route("/api/rank/<kind>")

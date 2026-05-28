@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Maple Fame</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="any" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="pageNav" class="page-nav">
+    <button id="homePageBtn">Home</button>
+  </div>
+  <div id="topbar">
+    <div class="controls fame-controls">
+      <input id="fameNameInput" type="text" placeholder="메이플 캐릭터 닉네임" />
+      <input id="fameAmountInput" type="text" inputmode="numeric" placeholder="금액" />
+      <div class="row">
+        <button id="addFameBtn">추가/갱신</button>
+        <button id="deleteFameBtn" class="danger">삭제</button>
+        <button id="reloadFameBtn">새로고침</button>
+      </div>
+    </div>
+    <div id="famePanel" class="ranks fame-rank-list"></div>
+  </div>
+
+  <canvas id="scene" width="1376" height="768"></canvas>
+  <div id="passwordModal" class="modal-backdrop hidden">
+    <form id="passwordForm" class="modal" autocomplete="off">
+      <strong id="passwordTitle">관리 비밀번호</strong>
+      <p id="passwordMessage"></p>
+      <input id="passwordInput" type="password" placeholder="관리 비밀번호" autocomplete="current-password" />
+      <div class="modal-actions">
+        <button id="passwordCancelBtn" type="button">취소</button>
+        <button id="passwordSubmitBtn" type="submit" class="danger">확인</button>
+      </div>
+    </form>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/fame-platforms.js" defer></script>
+  <script src="/static/fame.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Golden Octopus</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="octo-page">
+  <div id="pageNav" class="page-nav">
+    <button onclick="location.href='/'">홈</button>
+    <button onclick="location.href='/fame'">명예의 전당</button>
+    <button class="active" disabled>황금문어</button>
+  </div>
+
+  <main class="octo-area">
+    <div class="octo-stage">
+      <div class="octo-hero">
+        <div class="octo-char">
+          <img id="charImg" alt="" hidden />
+          <div id="guestAvatar" class="guest-avatar" hidden>GUEST</div>
+        </div>
+        <div id="charName" class="nameplate" hidden></div>
+      </div>
+
+      <div class="octo-game">
+        <div class="octo-count-label">(먹이 사용 횟수)</div>
+        <div class="octo-count"><b id="trialsText">0</b> / <span id="maxTrialsText">100</span></div>
+        <div class="octo-field">
+          <img class="octo-rock" src="/static/octopus_octopus_field.png" alt="" />
+          <img id="octoImg" class="octo-img" src="/static/octopus_1.png" alt="황금문어" />
+          <div id="octoFlash" class="octo-flash"></div>
+          <div class="octo-stats">
+            <div class="octo-levels">
+              <span id="levelNow" class="lv-pill">Lv. 1</span>
+              <span id="levelArrow" class="lv-arrow">〉</span>
+              <span id="levelNext" class="lv-pill next">Lv. 2</span>
+            </div>
+            <div id="probRows" class="octo-probs">
+              <span>성공</span><span id="probSuccess">▲ 100%</span>
+              <span>실패</span><span id="probFail">▼ 0%</span>
+              <span>도망</span><span id="probRun">0%</span>
+            </div>
+          </div>
+        </div>
+        <div id="octoMessage" class="octo-message">오른쪽에서 닉네임을 입력하고 시작하세요</div>
+        <div class="octo-actions">
+          <button id="feedBtn" class="start-btn" disabled>먹이주기</button>
+          <button id="stopBtn" disabled>멈추기</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="topbar">
+    <div class="glass-pill world-pill">
+      <img class="world-badge" src="/static/octopus_4.png" alt="" />
+      <div><strong>황금문어 키우기</strong><small>2026 애한제</small></div>
+    </div>
+    <button id="probToggleBtn" class="glass-pill toggle-pill" type="button" aria-expanded="false">
+      <span>확률표 보기</span><span class="chev"></span>
+    </button>
+    <div id="probPanel" class="panel prob-panel" hidden>
+      <table class="prob-table">
+        <thead><tr><th>레벨</th><th>성공</th><th>실패</th><th>도망</th></tr></thead>
+        <tbody id="probTableBody"></tbody>
+      </table>
+    </div>
+    <div id="octoRank" class="panel fame-rank-list"></div>
+    <div class="controls card">
+      <div class="card-title">도전하기</div>
+      <div class="card-inner">
+        <input id="octoNameInput" type="text" placeholder="캐릭터 닉네임" />
+        <label class="guest-toggle">
+          <input id="guestCheck" type="checkbox" />
+          <span>메이플 캐릭터 없이 게스트로 참여</span>
+        </label>
+      </div>
+      <button id="octoStartBtn" class="start-btn">시작</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/octopus.js" defer></script>
+</body>
+</html>

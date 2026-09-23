@@ -13,6 +13,10 @@ const cleanDbBtn = document.getElementById("cleanDbBtn");
 const cancelScannerBtn = document.getElementById("cancelScannerBtn");
 const readerVideo = document.getElementById("readerVideo");
 const panel = document.getElementById("panel");
+const slotCount = document.getElementById("slotCount");
+const rankToggleBtn = document.getElementById("rankToggleBtn");
+const rankMenu = document.getElementById("rankMenu");
+const visitorsBtn = document.getElementById("visitorsBtn");
 const toast = document.getElementById("toast");
 const scannerWrap = document.getElementById("scannerWrap");
 const passwordModal = document.getElementById("passwordModal");
@@ -541,6 +545,7 @@ async function loadChars() {
     preloadCharacterFrames(ch);
     return ch;
   });
+  slotCount.textContent = `${chars.length} / ${getQueueLimit()}`;
 }
 
 function updateFrameAnimation(ch) {
@@ -1055,11 +1060,69 @@ async function showRank(kind) {
     </div>
   `;
   panel.classList.remove("hidden");
+  markActiveRank(kind);
   document.getElementById("closePanelBtn").onclick = () => {
     currentRankKind = null;
     panel.classList.add("hidden");
+    markActiveRank(null);
   };
 }
+
+function markActiveRank(kind) {
+  rankMenu.querySelectorAll("button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.rank === kind);
+  });
+}
+
+rankMenu.querySelectorAll("button").forEach((btn) => {
+  btn.onclick = () => showRank(btn.dataset.rank);
+});
+
+async function showVisitors() {
+  const rows = await (await fetch("/api/visitors")).json();
+  const checked = rows.filter((r) => r.verified).length;
+  currentRankKind = null;
+  markActiveRank(null);
+  panel.innerHTML = `
+    <div class="panel-header">
+      <strong>방문 확인 (${checked} / ${rows.length})</strong>
+      <button id="closePanelBtn">닫기</button>
+    </div>
+    <div class="panel-body">
+      ${rows.map((r) => `
+        <label class="rank-row visit-row">
+          <input type="checkbox" data-name="${escapeHtml(r.name)}" ${r.verified ? "checked" : ""} />
+          <span class="rank-name">${escapeHtml(r.name)}</span>
+          <span class="rank-meta">Lv.${r.level}</span>
+        </label>
+      `).join("") || `<div class="empty-rank">등록된 캐릭터가 없습니다</div>`}
+    </div>
+  `;
+  panel.classList.remove("hidden");
+  document.getElementById("closePanelBtn").onclick = () => panel.classList.add("hidden");
+  panel.querySelectorAll(".visit-row input").forEach((box) => {
+    box.onchange = async () => {
+      const res = await fetch(`/api/visitors/${encodeURIComponent(box.dataset.name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verified: box.checked })
+      });
+      if (!res.ok) {
+        box.checked = !box.checked;
+        showToast("방문 확인 변경 실패");
+        return;
+      }
+      await showVisitors();
+    };
+  });
+}
+
+visitorsBtn.onclick = () => showVisitors();
+
+rankToggleBtn.onclick = () => {
+  const open = rankMenu.classList.toggle("hidden") === false;
+  rankToggleBtn.setAttribute("aria-expanded", String(open));
+};
 
 window.showRank = showRank;
 
@@ -1199,7 +1262,7 @@ async function startScanner() {
   }
   scannerWrap.classList.remove("hidden");
   toggleScannerBtn.disabled = true;
-  toggleScannerBtn.textContent = "카메라 사용 중";
+  toggleScannerBtn.textContent = "스캔 중";
   await scanner.start();
   scannerOpen = true;
 }
@@ -1211,7 +1274,7 @@ async function stopScanner() {
   scannerOpen = false;
   scannerWrap.classList.add("hidden");
   toggleScannerBtn.disabled = false;
-  toggleScannerBtn.textContent = "카메라 스캔";
+  toggleScannerBtn.textContent = "QR 스캔";
 }
 
 toggleScannerBtn.onclick = async () => {

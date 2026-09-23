@@ -12,19 +12,31 @@
 </head>
 <body>
   <div id="pageNav" class="page-nav">
-    <button id="homePageBtn">Home</button>
+    <button id="homePageBtn">홈</button>
+    <button id="famePageBtn" class="active" disabled>명예의 전당</button>
+    <button onclick="location.href='/octopus'">황금문어</button>
   </div>
   <div id="topbar">
-    <div class="controls fame-controls">
-      <input id="fameNameInput" type="text" placeholder="메이플 캐릭터 닉네임" />
-      <input id="fameAmountInput" type="text" inputmode="numeric" placeholder="금액" />
-      <div class="row">
-        <button id="addFameBtn">추가/갱신</button>
-        <button id="deleteFameBtn" class="danger">삭제</button>
-        <button id="reloadFameBtn">새로고침</button>
-      </div>
+    <div class="glass-pill world-pill">
+      <img class="world-badge" src="/static/favicon.ico" alt="" />
+      <div><strong>명예의 전당</strong><small>2026 애한제</small></div>
     </div>
-    <div id="famePanel" class="ranks fame-rank-list"></div>
+    <div id="famePanel" class="panel fame-rank-list"></div>
+    <div class="controls card">
+      <div class="card-title">명예의 전당 등록</div>
+      <div class="card-inner">
+        <input id="fameNameInput" type="text" placeholder="캐릭터 닉네임" />
+        <input id="fameAmountInput" type="text" inputmode="numeric" placeholder="금액" />
+        <div class="card-sub">
+          <div class="card-sub-label">관리</div>
+          <div class="row">
+            <button id="deleteFameBtn" class="danger">삭제</button>
+            <button id="reloadFameBtn">새로고침</button>
+          </div>
+        </div>
+      </div>
+      <button id="addFameBtn" class="start-btn">추가 / 갱신</button>
+    </div>
   </div>
 
   <canvas id="scene" width="1376" height="768"></canvas>

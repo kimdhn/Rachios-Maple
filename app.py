@@ -1,6 +1,6 @@
 
 from flask import Flask, request, jsonify, send_from_directory, Response, has_request_context
-import hmac, json, logging, sqlite3, os, requests
+import hmac, json, logging, random, sqlite3, os, requests, threading
 import flask.cli
 from datetime import datetime
 from urllib.parse import unquote, urlparse
@@ -73,8 +73,14 @@ def format_db_change_message(action: str, fields: dict):
     if action == "fame_upserted" and name:
         label = "업데이트" if fields.get("mode") == "updated" else "추가"
         return f"{name} fame {label} - {fields.get('amount', 0)}"
+    if action == "visit_verified" and name:
+        return f"{name} 방문 {'확인' if fields.get('verified') else '확인 취소'}"
     if action == "fame_deleted" and name:
         return f"{name} Fame 삭제"
+    if action == "octopus_finished" and name:
+        if fields.get("guest"):
+            name = f"[GUEST] {name}"
+        return f"{name} 황금문어 Lv.{fields.get('level')} ({fields.get('trials')}회, {OCTOPUS_RESULT_LABELS.get(fields.get('result'))})"
     if action == "queue_cleared":
         return f"전체 집보내기 ({fields.get('deleted_queue', 0)}명)"
     if action == "db_cleared":
@@ -101,7 +107,8 @@ def init_db():
         look TEXT NOT NULL,
         create_date TEXT,
         raw_qr TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        verified INTEGER NOT NULL DEFAULT 0
     )
     """)
 
@@ -112,9 +119,10 @@ def init_db():
     if has_old_chars:
         columns = [row[1] for row in cur.execute("PRAGMA table_info(chars)").fetchall()]
         created_at_expr = "created_at" if "created_at" in columns else "CURRENT_TIMESTAMP"
+        verified_expr = "verified" if "verified" in columns else "0"
         cur.execute(f"""
-        INSERT OR REPLACE INTO chars_new(name, level, power, popularity, look, create_date, raw_qr, created_at)
-        SELECT name, level, power, popularity, look, create_date, raw_qr, {created_at_expr}
+        INSERT OR REPLACE INTO chars_new(name, level, power, popularity, look, create_date, raw_qr, created_at, verified)
+        SELECT name, level, power, popularity, look, create_date, raw_qr, {created_at_expr}, {verified_expr}
         FROM chars
         ORDER BY rowid ASC
         """)
@@ -166,6 +174,37 @@ def init_db():
     """)
     cur.execute("DELETE FROM fame_entries WHERE name NOT IN (SELECT name FROM chars)")
     deleted_fame_orphans = cur.rowcount
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS octopus_records (
+        name TEXT NOT NULL,
+        guest INTEGER NOT NULL DEFAULT 0,
+        level INTEGER NOT NULL,
+        trials INTEGER NOT NULL,
+        result TEXT NOT NULL,
+        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (name, guest)
+    )
+    """)
+    octopus_columns = [row[1] for row in cur.execute("PRAGMA table_info(octopus_records)").fetchall()]
+    if "guest" not in octopus_columns:
+        # Guests pick free nicknames that may match real characters, so the key became (name, guest).
+        cur.execute("ALTER TABLE octopus_records RENAME TO octopus_records_old")
+        cur.execute("""
+        CREATE TABLE octopus_records (
+            name TEXT NOT NULL,
+            guest INTEGER NOT NULL DEFAULT 0,
+            level INTEGER NOT NULL,
+            trials INTEGER NOT NULL,
+            result TEXT NOT NULL,
+            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (name, guest)
+        )
+        """)
+        cur.execute("""
+        INSERT INTO octopus_records(name, guest, level, trials, result, recorded_at)
+        SELECT name, 0, level, trials, result, recorded_at FROM octopus_records_old
+        """)
+        cur.execute("DROP TABLE octopus_records_old")
     con.commit()
     con.close()
     if has_old_chars:
@@ -414,6 +453,7 @@ def clean_db():
     cur = con.cursor()
     cur.execute("DELETE FROM fame_entries")
     deleted_fame = cur.rowcount
+    cur.execute("DELETE FROM octopus_records")
     cur.execute("DELETE FROM char_queue")
     deleted_queue = cur.rowcount
     cur.execute("DELETE FROM chars")
@@ -433,6 +473,10 @@ def root():
 @app.route("/fame")
 def fame():
     return send_from_directory("static", "fame.html")
+
+@app.route("/octopus")
+def octopus():
+    return send_from_directory("static", "octopus.html")
 
 @app.route("/favicon.ico")
 def favicon():
@@ -501,6 +545,8 @@ def fame_upsert():
                 amount = excluded.amount,
                 updated_at = CURRENT_TIMESTAMP
         """, (character["name"], amount))
+        # Fame entries are added by staff with the admin password, so they count as a booth visit.
+        cur.execute("UPDATE chars SET verified = 1 WHERE name = ?", (character["name"],))
         con.commit()
         con.close()
     except ValueError as e:
@@ -573,6 +619,7 @@ def delete_char(name):
     deleted_queue = cur.rowcount
     cur.execute("DELETE FROM fame_entries WHERE name = ?", (name,))
     deleted_fame = cur.rowcount
+    cur.execute("DELETE FROM octopus_records WHERE name = ? AND guest = 0", (name,))
     cur.execute("DELETE FROM chars WHERE name = ?", (name,))
     deleted_chars = cur.rowcount
     con.commit()
@@ -672,6 +719,153 @@ def rank(kind):
     )]
     con.close()
     return jsonify(rows)
+
+# level: (success, fail, run). Success = +1, fail = -1, run = game over.
+OCTOPUS_PROBS = {
+    1: (1.0, 0.0, 0.0),
+    2: (0.6, 0.4, 0.0),
+    3: (0.5, 0.5, 0.0),
+    4: (0.4, 0.6, 0.0),
+    5: (0.307, 0.693, 0.0),
+    6: (0.205, 0.765, 0.03),
+    7: (0.103, 0.857, 0.04),
+    8: (0.05, 0.90, 0.05),
+}
+OCTOPUS_MAX_LEVEL = 9
+OCTOPUS_MAX_TRIALS = 100
+OCTOPUS_GUEST_NAME_MAX = 12
+OCTOPUS_RESULT_LABELS = {"max": "9레벨 달성", "run": "도망", "stopped": "멈춤", "exhausted": "먹이 소진"}
+# ponytail: in-memory games behind one lock; unfinished games are lost on server restart.
+octopus_games = {}
+octopus_lock = threading.Lock()
+
+def octopus_state(game):
+    return {**game, "max_trials": OCTOPUS_MAX_TRIALS, "probs": OCTOPUS_PROBS.get(game["level"])}
+
+def octopus_key(name, guest):
+    return (name, bool(guest))
+
+def finish_octopus(game, status):
+    game["status"] = status
+    octopus_games.pop(octopus_key(game["name"], game["guest"]), None)
+    con = get_conn()
+    # Keep only each character's best run: higher level first, then fewer trials.
+    con.execute("""
+        INSERT INTO octopus_records(name, guest, level, trials, result, recorded_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(name, guest) DO UPDATE SET
+            level = excluded.level,
+            trials = excluded.trials,
+            result = excluded.result,
+            recorded_at = CURRENT_TIMESTAMP
+        WHERE excluded.level > octopus_records.level
+           OR (excluded.level = octopus_records.level AND excluded.trials < octopus_records.trials)
+    """, (game["name"], int(game["guest"]), game["level"], game["trials"], status))
+    con.commit()
+    con.close()
+    log_db_change("octopus_finished", name=game["name"], guest=game["guest"], level=game["level"], trials=game["trials"], result=status)
+
+def roll_octopus(game):
+    success, fail, _ = OCTOPUS_PROBS[game["level"]]
+    roll = random.random()
+    game["trials"] += 1
+    if roll < success:
+        game["level"] += 1
+        game["last"] = "success"
+    elif roll < success + fail:
+        game["level"] -= 1
+        game["last"] = "fail"
+    else:
+        game["last"] = "run"
+        return "run"
+    if game["level"] >= OCTOPUS_MAX_LEVEL:
+        return "max"
+    if game["trials"] >= OCTOPUS_MAX_TRIALS:
+        return "exhausted"
+    return None
+
+@app.route("/api/octopus/start", methods=["POST"])
+def octopus_start():
+    d = request.get_json(silent=True) or {}
+    name = str(d.get("name", "")).strip()
+    guest = bool(d.get("guest"))
+    if not name:
+        return jsonify({"ok": False, "error": "닉네임을 입력해주세요"}), 400
+    if guest:
+        # Guests have no Maple character: free nickname, no Nexon lookup, no avatar.
+        if len(name) > OCTOPUS_GUEST_NAME_MAX:
+            return jsonify({"ok": False, "error": f"게스트 닉네임은 {OCTOPUS_GUEST_NAME_MAX}자까지 가능합니다"}), 400
+        look = None
+    else:
+        try:
+            character, _ = ensure_character_exists(name)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        except requests.RequestException:
+            return jsonify({"ok": False, "error": "넥슨 API 호출에 실패했습니다"}), 502
+        name, look = character["name"], character["look"]
+    with octopus_lock:
+        # An unfinished game is resumed, so a refresh doesn't reset progress.
+        game = octopus_games.setdefault(octopus_key(name, guest), {
+            "name": name, "guest": guest, "level": 1, "trials": 0, "status": "playing", "last": None,
+        })
+        state = octopus_state(game)
+    return jsonify({"ok": True, "game": state, "look": look})
+
+@app.route("/api/octopus/<action>", methods=["POST"])
+def octopus_action(action):
+    if action not in {"feed", "stop"}:
+        return jsonify({"ok": False, "error": "Invalid action"}), 400
+    d = request.get_json(silent=True) or {}
+    name = str(d.get("name", "")).strip()
+    with octopus_lock:
+        game = octopus_games.get(octopus_key(name, d.get("guest")))
+        if not game:
+            return jsonify({"ok": False, "error": "진행 중인 게임이 없습니다"}), 404
+        ended = roll_octopus(game) if action == "feed" else "stopped"
+        if ended:
+            finish_octopus(game, ended)
+        state = octopus_state(game)
+    return jsonify({"ok": True, "game": state})
+
+@app.route("/api/octopus/probs")
+def octopus_probs():
+    return jsonify(OCTOPUS_PROBS)
+
+@app.route("/api/octopus/rank")
+def octopus_rank():
+    con = get_conn()
+    rows = [dict(r) for r in con.execute("""
+        SELECT name, guest, level, trials, result FROM octopus_records
+        ORDER BY level DESC, trials ASC, recorded_at ASC LIMIT 50
+    """)]
+    con.close()
+    return jsonify(rows)
+
+# Booth visit checklist for staff; it doesn't affect what the scene or rankings show.
+@app.route("/api/visitors")
+def visitors():
+    con = get_conn()
+    rows = [dict(r) for r in con.execute(
+        "SELECT name, level, verified FROM chars ORDER BY verified ASC, created_at DESC, name ASC"
+    )]
+    con.close()
+    return jsonify(rows)
+
+@app.route("/api/visitors/<path:name>", methods=["POST"])
+def set_visitor(name):
+    name = unquote(name).strip()
+    verified = 1 if (request.get_json(silent=True) or {}).get("verified") else 0
+    con = get_conn()
+    cur = con.cursor()
+    cur.execute("UPDATE chars SET verified = ? WHERE name = ?", (verified, name))
+    updated = cur.rowcount
+    con.commit()
+    con.close()
+    if updated == 0:
+        return jsonify({"ok": False, "error": "해당 캐릭터를 찾지 못했습니다"}), 404
+    log_db_change("visit_verified", name=name, verified=verified)
+    return jsonify({"ok": True, "name": name, "verified": bool(verified)})
 
 @app.route("/api/proxy")
 def proxy():

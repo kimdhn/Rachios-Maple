@@ -13,28 +13,46 @@
 </head>
 <body>
   <div id="pageNav" class="page-nav">
-    <button id="famePageBtn" onclick="location.href='/fame'">Fame</button>
+    <button id="homePageBtn" class="active" disabled>홈</button>
+    <button id="famePageBtn" onclick="location.href='/fame'">명예의 전당</button>
+    <button onclick="location.href='/octopus'">황금문어</button>
   </div>
   <div id="topbar">
-    <div class="controls">
-      <input id="nameInput" type="text" placeholder="메이플 캐릭터 닉네임을 입력하세요" />
-      <div class="row">
-        <button id="addNameBtn">추가</button>
-        <button id="removeQueueBtn" class="danger">제거</button>
-        <button id="cleanQueueBtn" class="danger">집 보내기</button>
-        <button id="toggleScannerBtn">카메라 스캔</button>
-        <button id="reloadBtn">새로고침</button>
-      </div>
-      <div class="row db-row">
-        <button id="deleteNameBtn" class="danger">삭제</button>
-        <button id="cleanDbBtn" class="danger" hidden>DB 비우기</button>
-      </div>
+    <div class="glass-pill world-pill">
+      <img class="world-badge" src="/static/favicon.ico" alt="" />
+      <div><strong>사자가 메이플 할 때!</strong><small>2026 애한제</small></div>
     </div>
-    <div class="ranks">
-      <button onclick="showRank('level')">레벨 순위</button>
-      <button onclick="showRank('power')">전투력 순위</button>
-      <button onclick="showRank('popularity')">인기 순위</button>
-      <button onclick="showRank('created')">생성일 순위</button>
+    <div class="glass-pill slot-pill"><span>광장 캐릭터</span><span id="slotCount">-</span></div>
+    <button id="rankToggleBtn" class="glass-pill toggle-pill" type="button" aria-expanded="false">
+      <span>순위 보기</span><span class="chev"></span>
+    </button>
+    <div id="rankMenu" class="ranks hidden">
+      <button data-rank="level">레벨</button>
+      <button data-rank="power">전투력</button>
+      <button data-rank="popularity">인기</button>
+      <button data-rank="created">생성일</button>
+    </div>
+    <div id="panel" class="panel hidden"></div>
+    <div class="controls card">
+      <div class="card-title">캐릭터 등록</div>
+      <div class="card-inner">
+        <input id="nameInput" type="text" placeholder="캐릭터 닉네임" />
+        <div class="card-sub">
+          <div class="card-sub-label">관리</div>
+          <div class="row">
+            <button id="removeQueueBtn" class="danger">제거</button>
+            <button id="cleanQueueBtn" class="danger">집 보내기</button>
+            <button id="toggleScannerBtn">QR 스캔</button>
+            <button id="reloadBtn">새로고침</button>
+          </div>
+          <div class="row db-row">
+            <button id="visitorsBtn">방문 확인</button>
+            <button id="deleteNameBtn" class="danger">캐릭터 삭제</button>
+            <button id="cleanDbBtn" class="danger" hidden>DB 비우기</button>
+          </div>
+        </div>
+      </div>
+      <button id="addNameBtn" class="start-btn">추가</button>
     </div>
   </div>
 
@@ -47,7 +65,6 @@
   </div>
 
   <canvas id="scene" width="1280" height="720"></canvas>
-  <div id="panel" class="panel hidden"></div>
   <div id="passwordModal" class="modal-backdrop hidden">
     <form id="passwordForm" class="modal" autocomplete="off">
       <strong id="passwordTitle">관리 비밀번호</strong>

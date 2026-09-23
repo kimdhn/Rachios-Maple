@@ -1,5 +1,5 @@
 # 사자가 메이플 할 때!
-> 2026 애한제 - 2026.05.28. ~ 2026.05.29.
+> HYU Maple Since 2019
 
 ![HYU](static/background.png)
 
